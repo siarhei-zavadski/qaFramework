@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "author": "Siarhei Zavadski",
+  "license": "MIT",
   "scripts": {
     "bva": "node src/bva.ts",
     "ep": "node src/ep.ts",

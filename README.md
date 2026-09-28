@@ -45,3 +45,10 @@ npm test && npm run typecheck && npm run format:check
 ```
 
 Not supported: see "Known limits" in [`AGENTS.md`](AGENTS.md).
+
+## License
+
+[MIT](LICENSE) © Siarhei Zavadski
+
+Exercises in `fixtures/` come from [test-design.org](https://test-design.org)
+and are not covered by this license.
