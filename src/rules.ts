@@ -22,6 +22,20 @@ export function matchRule(spec: Spec, row: Row): Rule | undefined {
   return spec.rules.find(rule => matches(spec, rule, row));
 }
 
+/** Expected result of a valid row, with the formula when it was computed. */
+export interface Outcome {
+  expected: string | number;
+  formula?: string;
+}
+
+/** Outcome of the first matching rule; 'valid' when there are no rules. */
+export function outcomeOf(spec: Spec | undefined, row: Row): Outcome {
+  const rule = spec && matchRule(spec, row);
+  if (!rule) return {expected: 'valid'};
+  if (!rule.formula) return {expected: rule.expected};
+  return {expected: rule.formula.evaluate(row), formula: rule.formula.text};
+}
+
 /** Rules that no row matches first. */
 export function uncoveredRules(spec: Spec, rows: Row[]): Rule[] {
   const hit = new Set(rows.map(row => matchRule(spec, row)));

@@ -33,7 +33,8 @@ Pick techniques from what you found:
 | Input accepted or rejected by range, length or set | BVA + EP | `partitions` with `valid` |
 | Several inputs that interact | pairwise (`strength: 2`) | multiple fields |
 | A rule needs 3+ conditions at once | rule coverage, or `strength: 3` | `rules` |
-| Output is computed or chosen by conditions | decision table | `rules` with `expected` |
+| Output is computed or chosen by conditions | decision table | `rules` with `expected` (`=` formulas for computed values) |
+| A condition combines fields (a sum, a difference, one field compared to another) | not supported | model the per-field parts, list the combined condition as a gap |
 | Behaviour depends on history or order (states, workflows) | not supported | say so, design those cases by hand |
 
 Anything the requirement leaves open (inclusive or exclusive bound, precision, upper limit, case sensitivity) is a question for the user, not a guess.
@@ -80,20 +81,21 @@ How to model common wording:
 
 ### 3. Model outcomes as rules
 
-When valid inputs lead to different results, add a decision table. The first matching rule wins, and the last rule must be the catch-all `{"when": {}}`:
+When valid inputs lead to different results, add a decision table. The first matching rule wins:
 
 ```json
 "rules": [
-  {"when": {"price": "high", "card": "yes", "weight": "light"}, "expected": "0.85 * price"},
-  {"when": {"price": "high"}, "expected": "0.9 * price"},
-  {"when": {"price": "low", "weight": "heavy"}, "expected": "price + weight"},
-  {"when": {}, "expected": "price"}
+  {"when": {"price": "high", "card": "yes", "weight": "light"}, "expected": "=round(0.85 * price, 0.1)"},
+  {"when": {"price": "high"}, "expected": "=round(0.9 * price, 0.1)"},
+  {"when": {"price": "low", "weight": "heavy"}, "expected": "=round(price + weight, 0.1)"},
+  {"when": {}, "expected": "=round(price, 0.1)"}
 ]
 ```
 
 - `when` maps field names to valid partition labels. Put the most specific rule first.
+- End with the catch-all `{"when": {}}` for "otherwise". Without one, every combination of the valid partitions the rules mention must match a rule, or the CLI names the missing combination.
 - Every rule gets a matching case plus one case per value of each of its condition fields, BVA edges included, with the rule's other conditions held. That tests the boundaries inside multi-field rules (`>` vs `>=` in a 3-condition rule), which pairwise misses, without full 3-wise.
-- `expected` is the outcome as stated. Include output rounding or precision when the requirement defines it (`"round(0.85 * price, 0.1)"`), or list it as an assumption.
+- `expected` is the outcome as stated: a literal (`"rejected"`, `"gold"`), or `=` and a formula that the CLI computes for each case. Formulas use field names, numbers, `+ - * / ( )`, `min(...)`, `max(...)`, and `round(x, step)`, `floor(x, step)`, `ceil(x, step)`, which round to a multiple of `step` (half up, down, up). Include output rounding when the requirement defines it, or list it as an assumption.
 - Set `"strength": 3` only when unknown interactions of three inputs, not covered by any rule, are a real risk. It multiplies the case count.
 - With only two fields, `strength: 2` is every combination. When rules describe all the logic, offer `"strength": 1` (each value at least once, plus the rule boundary cases) as a smaller suite and let the user choose.
 
@@ -110,6 +112,11 @@ node src/pairwise.ts --spec generated/<feature>/spec.json --debug --out generate
 The BVA and EP files show the chosen values for review. Pairwise derives them itself from `--spec`. If you edit the value files, pass them instead with `--bva`/`--ep`, and keep `--spec` for the rules.
 
 The report goes to stderr. Proceed only when it shows `uncovered: none`, and `uncovered rules: none` when there are rules. A case count a little above the lower bound is normal. `--strength N` overrides the spec.
+
+Output shapes (read `cases`, the file is not an array):
+
+- `bva.json`, `ep.json`: `{"technique", "fields": {"<name>": [{"label", "value", "valid", "partition"}]}}`
+- `cases.json`: `{"technique", "strength", "cases": [{"id", "valid", "expected", "formula"?, "input": {"<name>": value}, "fault"?}]}`. `expected` is the rule's literal, the computed number for `=` rules (with `formula` holding the text), `valid` without rules, or `invalid`. `fault` names the invalid value of a negative case.
 
 Positive cases combine valid values only. Each negative case has exactly one invalid value, with valid values everywhere else. Don't hand-edit cases to combine invalid values.
 
@@ -144,15 +151,15 @@ Summarise first, then give a table from `cases.json`:
 ```markdown
 Generated 70 cases for price-calculation: 62 positive (all 66 pairs, lower bound 40; all 7 rules at their condition boundaries) and 8 negative, each with one invalid value. The requirement doesn't say how invalid input is handled (open question).
 
-| ID | Valid | price | weight | card | Expected | Paid | Fault |
+| ID | Valid | price | weight | card | Expected | Formula | Fault |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| TC-001 | yes | 50 | 2.5 | false | price | 50 | |
-| TC-047 | yes | 200 | 2.5 | true | 0.85 * price | 170 | |
+| TC-001 | yes | 50 | 2.5 | false | 50 | round(price, 0.1) | |
+| TC-047 | yes | 200 | 2.5 | true | 170 | round(0.85 * price, 0.1) | |
 | TC-066 | no | -0.1 | 2.5 | false | invalid | | price: bva below.max |
 | TC-068 | no | 50 | "abc" | false | invalid | | weight: ep invalid:abc |
 ```
 
-When `expected` is a formula, compute the concrete result for each row if the user needs pass/fail values. List the file paths and every assumption made while modelling (steps, inclusive or exclusive bounds, open ends, added invalid values, unit mappings).
+List the file paths and every assumption made while modelling (steps, inclusive or exclusive bounds, open ends, added invalid values, unit mappings).
 
 ## Errors
 
@@ -163,6 +170,9 @@ The CLI prints `error: <message>` and exits with code 1. The message names the f
 - `is in more than one partition`: an `invalid` or set value falls inside a range
 - `x=y is not a valid partition`: a rule uses an unknown or invalid label
 - `can never match`: earlier rules cover every row this rule would match; reorder or remove it
+- `no rule matches x=a, y=b`: the table has a hole; add a rule for it or a catch-all `{"when": {}}`
+- `formula ...: unknown name`, `unexpected`, `ends too early`: fix the `=` formula (names are field names; only `round`, `floor`, `ceil`, `min`, `max` exist)
+- `formula ...: x is "abc", not a number`: the formula uses a field whose valid values aren't numbers
 - `is valid in one ... and invalid in the other`: edited `--bva`/`--ep` files disagree
 
 ## Checking the tool itself

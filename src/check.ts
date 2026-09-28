@@ -14,6 +14,7 @@ import {
   validDomains,
   type Case,
 } from './pairwise.ts';
+import {parseFormula} from './formula.ts';
 import {uncoveredRules} from './rules.ts';
 import {parseSpec, readJson, type Spec} from './spec.ts';
 
@@ -155,11 +156,52 @@ rejects(
 );
 rejects(
   {
-    fields: [{name: 'x', type: 'enum', values: ['a']}],
+    fields: [{name: 'x', type: 'enum', values: ['a', 'b']}],
     rules: [{when: {x: 'a'}, expected: 'e'}],
   },
-  /catch-all/,
+  /no rule matches x=b/,
 );
+
+// A complete decision table needs no catch-all.
+const complete = parseSpec({
+  fields: [{name: 'plan', type: 'enum', values: ['basic', 'pro']}],
+  rules: [
+    {when: {plan: 'basic'}, expected: '=10'},
+    {when: {plan: 'pro'}, expected: 'twenty'},
+  ],
+});
+assert.deepEqual(
+  generateCases(valuesOf(complete), complete)
+    .filter(c => c.valid)
+    .map(c => [c.input.plan, c.expected, c.formula]),
+  [
+    ['basic', 10, '10'],
+    ['pro', 'twenty', undefined],
+  ],
+);
+
+// Formulas: precedence, unary minus, functions, half-up rounding, no float
+// noise; names are checked when parsed, values when evaluated.
+const calc = (text: string, row = {}) =>
+  parseFormula(text, ['price', 'code'], 'r').evaluate(row);
+assert.equal(calc('2 + 3 * -(1 - 5) / 2'), 8);
+assert.equal(calc('min(3, 1, 2) + max(4, 5)'), 6);
+assert.equal(calc('0.1 + 0.2'), 0.3);
+assert.equal(calc('round(0.85 * price, 0.1)', {price: 201}), 170.9);
+assert.equal(calc('round(price, 5)', {price: 12.5}), 15);
+assert.equal(calc('floor(price, 0.1)', {price: 0.3}), 0.3);
+assert.equal(calc('ceil(price, 0.5)', {price: 1.01}), 1.5);
+for (const [text, message] of [
+  ['0.9 * pric', /unknown name pric/],
+  ['round(price)', /takes 2 arguments/],
+  ['price +', /ends too early/],
+  ['price )', /unexpected \)/],
+  ['sqrt(price)', /unknown function sqrt/],
+] as const) {
+  assert.throws(() => calc(text), message);
+}
+assert.throws(() => calc('code * 2', {code: 'abc'}), /"abc", not a number/);
+assert.throws(() => calc('1 / price', {price: 0}), /not a finite number/);
 
 // Merge refuses a value that one technique calls valid and another invalid.
 assert.throws(
@@ -244,7 +286,8 @@ function pricePaid(
     card && logic.r5High(price) && logic.r5Light(weight)
       ? 0.85 * price
       : goods + delivery;
-  return Math.round(total * 10) / 10;
+  // toPrecision drops float noise so 170.85 rounds up, like formula round().
+  return Math.round(Number((total * 10).toPrecision(12))) / 10;
 }
 const mutants: Record<string, Partial<PriceLogic>> = {
   'R1 price > 200': {high: p => p > 200},
@@ -268,6 +311,18 @@ for (const [name, change] of Object.entries(mutants)) {
     );
   });
   assert.ok(killed, `mutant "${name}" survives the price-calculation cases`);
+}
+// The fixture's formulas compute what the price logic pays.
+for (const {valid, expected, input} of priceCases) {
+  const {price, weight, card} = input;
+  if (!valid || typeof price !== 'number' || typeof weight !== 'number') {
+    continue;
+  }
+  assert.equal(
+    expected,
+    pricePaid(correct, price, weight, card === true),
+    JSON.stringify(input),
+  );
 }
 const shadowed = parseSpec({
   fields: [{name: 'x', type: 'enum', values: ['a']}],

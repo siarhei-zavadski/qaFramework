@@ -36,6 +36,7 @@ const spec = parseSpec(readJson(file)); // throws `field: reason`
 - New field type: add one entry to `FIELD_TYPES` in `src/spec.ts` (scale with
   `minKey`/`maxKey`/`floor`/`toValue`/`toPoint`, and `defaultInvalid`). BVA,
   EP, pairwise and rules need no changes.
+- New formula function: one entry in `FUNCTIONS` in `src/formula.ts`.
 - New technique: a `src/<technique>.ts` that returns a `Result` and has its own
   `import.meta.main` CLI, like `src/bva.ts`.
 - Every new behaviour gets one assertion in `src/check.ts`, and the skill's

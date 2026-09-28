@@ -4,6 +4,7 @@
  */
 
 import {readFileSync, writeFileSync} from 'node:fs';
+import {parseFormula, type Formula} from './formula.ts';
 
 /** A test input value as it appears in generated JSON. */
 export type Value = string | number | boolean | null;
@@ -38,7 +39,9 @@ export interface Field {
 export interface Rule {
   /** Field name to valid partition label; empty for the catch-all rule. */
   when: Record<string, string>;
+  /** Literal outcome, or `=` followed by a formula. */
   expected: string;
+  formula?: Formula;
 }
 
 /** A normalized spec. */
@@ -420,12 +423,61 @@ function parseRules(raw: unknown, fields: Field[]): Rule[] {
       }
       conditions[name] = partition.label;
     }
-    return {when: conditions, expected: rule.expected};
+    const parsed: Rule = {when: conditions, expected: rule.expected};
+    if (rule.expected.startsWith('=')) {
+      parsed.formula = parseFormula(
+        rule.expected.slice(1).trim(),
+        fields.map(f => f.name),
+        where,
+      );
+    }
+    return parsed;
   });
   if (Object.keys(rules[rules.length - 1].when).length) {
-    throw new Error('the last rule must be a catch-all with an empty when');
+    const gap = unmatchedCombination(rules, fields);
+    if (gap) {
+      throw new Error(
+        `no rule matches ${gap}; add a rule or a catch-all {"when": {}}`,
+      );
+    }
   }
   return rules;
+}
+
+/**
+ * First combination of valid partitions, over the fields the rules mention,
+ * that no rule matches; undefined when the rules cover every combination.
+ */
+function unmatchedCombination(
+  rules: Rule[],
+  fields: Field[],
+): string | undefined {
+  // ponytail: tries every combination, exponential in the number of fields
+  // the rules mention; it only runs for tables without a catch-all.
+  const names = new Set(rules.flatMap(rule => Object.keys(rule.when)));
+  const mentioned = fields.filter(f => names.has(f.name));
+  const combination: Record<string, string> = {};
+  const search = (depth: number): string | undefined => {
+    if (depth === mentioned.length) {
+      const hit = rules.some(rule =>
+        Object.entries(rule.when).every(
+          ([name, label]) => combination[name] === label,
+        ),
+      );
+      if (hit) return undefined;
+      return Object.entries(combination)
+        .map(([name, label]) => `${name}=${label}`)
+        .join(', ');
+    }
+    const {name, partitions} = mentioned[depth];
+    for (const p of partitions.filter(p => p.valid)) {
+      combination[name] = p.label;
+      const gap = search(depth + 1);
+      if (gap) return gap;
+    }
+    return undefined;
+  };
+  return search(0);
 }
 
 /** Validates untrusted spec JSON and normalizes it. */

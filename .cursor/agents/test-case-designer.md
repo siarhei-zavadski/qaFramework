@@ -31,8 +31,9 @@ Return, in this order:
 
 - One-line summary: case counts (positive, negative), tuple and rule coverage.
 - The spec path and cases path.
-- A markdown table of the cases (ID, valid, inputs, expected, fault). When
-  `expected` is a formula, add a column with the computed value.
+- A markdown table of the cases (ID, valid, inputs, expected, fault). For
+  `=` rules, `expected` is already the computed value; add a formula column
+  from each case's `formula`.
 - Requirement-to-spec mapping: each partition and rule with the requirement
   line it comes from.
 - Assumptions and open questions.

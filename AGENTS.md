@@ -28,6 +28,7 @@ invent a spec format; model the requirement as a spec and run the CLI.
 | `src/bva.ts`, `src/ep.ts` | Value techniques (one CLI each) |
 | `src/pairwise.ts` | t-wise generation, negative cases, `--verify` audit |
 | `src/rules.ts` | Decision-table outcomes and rule coverage |
+| `src/formula.ts` | Computed rule outcomes (`=` formulas, no eval) |
 | `src/check.ts` | Self-check (`npm test`) |
 | `fixtures/` | Tracked acceptance data (test-design.org exercises) |
 | `spec.example.json` | Minimal spec, used by the self-check |
@@ -43,5 +44,6 @@ Run `npm run format`, then `npm test` (self-check), `npm run typecheck` and
 ## Known limits
 
 Not supported: state transitions and workflows, constraints that exclude
-impossible combinations, dates as a native type (map them to numbers). Say so
-instead of working around it in the spec.
+impossible combinations, conditions that combine fields (a sum, a difference,
+one field compared to another), dates as a native type (map them to numbers).
+Say so instead of working around it in the spec.

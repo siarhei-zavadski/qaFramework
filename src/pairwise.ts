@@ -7,7 +7,7 @@
 import {parseArgs} from 'node:util';
 import {analyzeBoundaries} from './bva.ts';
 import {analyzePartitions} from './ep.ts';
-import {matchRule, rowsForRules, uncoveredRules} from './rules.ts';
+import {outcomeOf, rowsForRules, uncoveredRules} from './rules.ts';
 import {
   inputOptions,
   isRecord,
@@ -32,8 +32,13 @@ type Row = Record<string, Value>;
 export interface Case {
   id: string;
   valid: boolean;
-  /** Rule outcome for valid cases ('valid' without rules), else 'invalid'. */
-  expected: string;
+  /**
+   * Rule outcome for valid cases ('valid' without rules, a number for `=`
+   * rules), else 'invalid'.
+   */
+  expected: string | number;
+  /** The formula a numeric `expected` was computed from. */
+  formula?: string;
   input: Row;
   /** The single invalid value of a negative case. */
   fault?: string;
@@ -296,7 +301,7 @@ export function generateCases(
   if (spec) rows.push(...rowsForRules(spec, domains, rows));
   const positive = rows.map(input => ({
     valid: true,
-    expected: (spec && matchRule(spec, input)?.expected) ?? 'valid',
+    ...outcomeOf(spec, input),
     input,
   }));
   const base: Row = {};

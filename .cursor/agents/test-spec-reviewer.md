@@ -35,15 +35,17 @@ Check the spec against the requirement line by line:
   requirement implies (for example lowercase country codes) are present.
 - **Rules**: every outcome in the text has a rule; conditions that act together
   (3 or more fields) have their own rule placed before the general ones; the
-  catch-all's `expected` is correct; no rule is shadowed.
+  catch-all's `expected` (if any) is correct; computed outcomes are `=`
+  formulas with the stated rounding, not text; no rule is shadowed.
 - **Rule boundaries**: in the generated cases, each rule's condition edges
   appear while its other conditions hold (for "price >= 200 and card and
   weight < 5": 199.9/200 with card and a light weight, 4.9/5 with card and a
   high price). If not, the partitions behind the condition are wrong.
 - **Expected results**: formulas match the text, including output rounding or
   precision.
-- **Technique fit**: nothing that needs state transitions or constraints is
-  forced into the spec.
+- **Technique fit**: nothing that needs state transitions, constraints or
+  conditions combining fields (a sum, one field compared to another) is forced
+  into the spec with invented partitions.
 
 You may run any `node src/*.ts` command that prints to stdout (no `--out`),
 including `--debug`, `--strength N` and `--verify`, and pipe it through `rg`,

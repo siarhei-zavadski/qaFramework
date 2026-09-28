@@ -32,19 +32,22 @@
   "rules": [
     {
       "when": {"price": "high", "card": "yes", "weight": "light"},
-      "expected": "0.85 * price"
+      "expected": "=round(0.85 * price, 0.1)"
     },
     {
       "when": {"price": "high", "card": "yes"},
-      "expected": "0.9 * 0.97 * price"
+      "expected": "=round(0.9 * 0.97 * price, 0.1)"
     },
-    {"when": {"price": "high"}, "expected": "0.9 * price"},
+    {"when": {"price": "high"}, "expected": "=round(0.9 * price, 0.1)"},
     {
       "when": {"price": "low", "weight": "heavy", "card": "yes"},
-      "expected": "0.97 * price + weight"
+      "expected": "=round(0.97 * price + weight, 0.1)"
     },
-    {"when": {"price": "low", "weight": "heavy"}, "expected": "price + weight"},
-    {"when": {"card": "yes"}, "expected": "0.97 * price"},
-    {"when": {}, "expected": "price"}
+    {
+      "when": {"price": "low", "weight": "heavy"},
+      "expected": "=round(price + weight, 0.1)"
+    },
+    {"when": {"card": "yes"}, "expected": "=round(0.97 * price, 0.1)"},
+    {"when": {}, "expected": "=round(price, 0.1)"}
   ]
 }
