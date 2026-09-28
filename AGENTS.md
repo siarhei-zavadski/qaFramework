@@ -1,8 +1,3 @@
----
-description: What the qaFramework repo is, where things live, and how to use it for test design
-alwaysApply: true
----
-
 # qaFramework
 
 A zero-dependency TypeScript CLI (Node 26 runs `.ts` directly, no build) that
@@ -35,11 +30,15 @@ invent a spec format; model the requirement as a spec and run the CLI.
 | `src/rules.ts` | Decision-table outcomes and rule coverage |
 | `src/check.ts` | Self-check (`npm test`) |
 | `fixtures/` | Tracked acceptance data (test-design.org exercises) |
+| `spec.example.json` | Minimal spec, used by the self-check |
+| `.cursor/skills/generating-test-cases/` | Test design workflow and spec format |
+| `.cursor/agents/` | `test-case-designer` and `test-spec-reviewer` subagents |
+| `.cursor/rules/typescript-style.mdc` | Code style for `src/**/*.ts` |
 
 ## Commands
 
-`npm test` (self-check), `npm run typecheck`, `npm run format`,
-`npm run format:check`. All four must pass before a change is done.
+Run `npm run format`, then `npm test` (self-check), `npm run typecheck` and
+`npm run format:check`. All three must pass before a change is done.
 
 ## Known limits
 

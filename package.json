@@ -2,6 +2,7 @@
   "name": "qa-framework",
   "private": true,
   "type": "module",
+  "author": "Siarhei Zavadski",
   "scripts": {
     "bva": "node src/bva.ts",
     "ep": "node src/ep.ts",

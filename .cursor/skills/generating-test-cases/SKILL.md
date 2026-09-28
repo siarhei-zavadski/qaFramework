@@ -133,7 +133,8 @@ It exits with code 1 and lists uncovered tuples and rules if coverage is incompl
 
 Give the `test-spec-reviewer` subagent the requirement and the spec path. On
 `revise`, apply the critical fixes, re-run step 4, and ask the user about the
-warnings. If subagents aren't available, walk its checklist yourself
+warnings. If subagents aren't available, or you are running as a subagent
+(for example `test-case-designer`), walk its checklist yourself
 (`.cursor/agents/test-spec-reviewer.md`).
 
 ### 6. Present the cases

@@ -1,6 +1,6 @@
 ---
 name: test-case-designer
-description: Turns one requirement (text, URL, ticket or test-design.org exercise) into a validated spec and generated test cases with this repo's CLI. Use proactively for every test-design request, one subagent per requirement when there are several.
+description: Turns one requirement (text, URL, ticket or test-design.org exercise) into a validated spec and generated test cases with this repo's CLI. Use when there are several requirements, one subagent per requirement.
 model: inherit
 ---
 
