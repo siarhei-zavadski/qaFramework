@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Generated test cases
+generated/
+
+# Local editor and agent files (keep project skills, rules and subagents)
+.cursor/*
+!.cursor/skills/
+!.cursor/rules/
+!.cursor/agents/
+.playwright-mcp/
+.vscode/
+.idea/
+
+# Logs and OS files
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

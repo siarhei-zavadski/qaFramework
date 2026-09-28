@@ -1,0 +1,19 @@
+{
+  "name": "qa-framework",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bva": "node src/bva.ts",
+    "ep": "node src/ep.ts",
+    "pairwise": "node src/pairwise.ts",
+    "test": "node src/check.ts",
+    "typecheck": "tsc",
+    "format": "prettier --write src fixtures spec.example.json",
+    "format:check": "prettier --check src fixtures spec.example.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "prettier": "^3.9.9",
+    "typescript": "^7.0.2"
+  }
+}

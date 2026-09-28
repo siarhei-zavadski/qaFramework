@@ -1,0 +1,42 @@
+---
+description: Google TypeScript style and extension conventions for the qaFramework CLI source
+globs: src/**/*.ts
+alwaysApply: false
+---
+
+# TypeScript conventions (Google TS style guide)
+
+Follow https://google.github.io/styleguide/tsguide.html. Prettier (`gts`
+settings in `.prettierrc.json`) owns formatting; run `npm run format`.
+
+- `interface` for object shapes; `type` only for unions, `Record`s and tuples.
+- Top-level named functions are `function` declarations, not arrow constants.
+- One variable per declaration; no nested ternaries.
+- Descriptive names; single letters only for scopes of 10 lines or fewer.
+- No `as` or `!` without a runtime check. Parsed JSON is `unknown` until a
+  type guard validates it:
+
+```ts
+// BAD
+const spec = JSON.parse(text) as Spec;
+// GOOD
+const spec = parseSpec(readJson(file)); // throws `field: reason`
+```
+
+- JSDoc (`/** */`) on exports whose purpose isn't obvious; `@fileoverview`
+  at the top of each file. No types in JSDoc.
+- Named exports only; `.ts` extensions in relative imports; `node:` builtins.
+- Errors are `throw new Error('<field|rule>: <reason>')`; CLIs wrap `main` in
+  `run()` so users see `error: <message>` and exit code 1.
+- No new runtime dependencies. Mark intentional shortcuts with a `ponytail:`
+  comment naming the ceiling and the upgrade path.
+
+# Extending
+
+- New field type: add one entry to `FIELD_TYPES` in `src/spec.ts` (scale with
+  `minKey`/`maxKey`/`floor`/`toValue`/`toPoint`, and `defaultInvalid`). BVA,
+  EP, pairwise and rules need no changes.
+- New technique: a `src/<technique>.ts` that returns a `Result` and has its own
+  `import.meta.main` CLI, like `src/bva.ts`.
+- Every new behaviour gets one assertion in `src/check.ts`, and the skill's
+  spec docs are updated in the same change.
