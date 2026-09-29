@@ -1,0 +1,10 @@
+{
+  "name": "qa-framework",
+  "description": "Test case design with BVA, EP, pairwise/t-wise and decision-table rules.",
+  "version": "0.1.0",
+  "author": {"name": "Siarhei Zavadski"},
+  "license": "MIT",
+  "keywords": ["testing", "test-design", "pairwise", "istqb"],
+  "skills": "./.cursor/skills/",
+  "agents": "./.cursor/agents/"
+}

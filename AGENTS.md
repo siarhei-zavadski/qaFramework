@@ -35,6 +35,7 @@ have the user review them before committing.
 | `src/pairwise.ts` | t-wise generation, negative cases, `--verify` audit |
 | `src/rules.ts` | Decision-table outcomes and rule coverage |
 | `src/formula.ts` | Computed rule outcomes (`=` formulas, no eval) |
+| `src/mcp.ts` | Stdio MCP server running the CLIs (`bva`, `ep`, `pairwise` tools) |
 | `src/check.ts` | Self-check (`npm test`) |
 | `fixtures/` | Tracked acceptance data (test-design.org exercises) |
 | `spec.example.json` | Minimal spec, used by the self-check |
@@ -43,6 +44,7 @@ have the user review them before committing.
 | `projects/<project>/` | Detected stack and reviewed tech skills per analysed repo |
 | `.cursor/agents/` | `test-case-designer` and `test-spec-reviewer` subagents |
 | `.cursor/rules/typescript-style.mdc` | Code style for `src/**/*.ts` |
+| `.cursor-plugin/plugin.json`, `mcp.json` | Cursor plugin manifest (skills, subagents, MCP server) |
 
 ## Commands
 

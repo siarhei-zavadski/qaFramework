@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "qa-framework": {
+      "command": "node",
+      "args": ["${CURSOR_PLUGIN_ROOT}/src/mcp.ts"]
+    }
+  }
+}

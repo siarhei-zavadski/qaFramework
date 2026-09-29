@@ -38,6 +38,7 @@ const spec = parseSpec(readJson(file)); // throws `field: reason`
   EP, pairwise and rules need no changes.
 - New formula function: one entry in `FUNCTIONS` in `src/formula.ts`.
 - New technique: a `src/<technique>.ts` that returns a `Result` and has its own
-  `import.meta.main` CLI, like `src/bva.ts`.
+  `import.meta.main` CLI, like `src/bva.ts`, plus a `TOOLS` entry in
+  `src/mcp.ts`.
 - Every new behaviour gets one assertion in `src/check.ts`, and the skill's
   spec docs are updated in the same change.

@@ -40,6 +40,19 @@ node src/bva.ts --name price --min 0.01 --max 999.99 --step 0.01
 The spec format and full workflow are in
 [`.cursor/skills/generating-test-cases/SKILL.md`](.cursor/skills/generating-test-cases/SKILL.md).
 
+## Use in other projects (Cursor plugin)
+
+The repo is also a Cursor plugin: the skills, the subagents and an MCP server
+(`src/mcp.ts`) whose `bva`, `ep` and `pairwise` tools run the CLI in your
+project. It needs Node 26 on `PATH` and no `npm ci`.
+
+```bash
+git clone <this repo> ~/.cursor/plugins/local/qa-framework
+```
+
+Then run **Developer: Reload Window**. A symlink to a checkout elsewhere is
+not loaded.
+
 ## Development
 
 ```bash

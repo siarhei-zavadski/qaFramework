@@ -363,6 +363,35 @@ const badSuite = verify('package.json');
 assert.equal(badSuite.status, 1);
 assert.match(badSuite.stderr, /expected an array of rows/);
 
+// MCP server: lists the tools, runs the CLI in `cwd`, reports a bad `cwd` as
+// a tool error; notifications get no response.
+const rpc = (id: number, method: string, params: object) =>
+  JSON.stringify({jsonrpc: '2.0', id, method, params});
+const pairwiseCall = (id: number, args: object) =>
+  rpc(id, 'tools/call', {name: 'pairwise', arguments: args});
+const mcp = spawnSync(process.execPath, ['src/mcp.ts'], {
+  encoding: 'utf8',
+  input: [
+    rpc(1, 'initialize', {protocolVersion: '2025-06-18'}),
+    JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'}),
+    rpc(2, 'tools/list', {}),
+    pairwiseCall(3, {cwd: process.cwd(), spec: 'spec.example.json'}),
+    pairwiseCall(4, {spec: 'spec.example.json'}),
+  ].join('\n'),
+});
+const [init, list, call, noCwd] = mcp.stdout
+  .trim()
+  .split('\n')
+  .map(line => JSON.parse(line));
+assert.equal(init.result.serverInfo.name, 'qa-framework');
+assert.deepEqual(
+  list.result.tools.map((t: {name: string}) => t.name),
+  ['bva', 'ep', 'pairwise'],
+);
+assert.equal(call.result.isError, false, call.result.content[0].text);
+assert.match(call.result.content[0].text, /"cases"/);
+assert.equal(noCwd.result.isError, true);
+
 console.log(
   `all checks passed (exercise: ${generated.length} cases, ` +
     `lower bound ${exercise.lowerBound}; price-calculation: ${priceCases.length} cases)`,

@@ -5,7 +5,15 @@ description: Designs test cases from any requirement with this repo's CLI (src/b
 
 # Generating test cases with the qaFramework CLI
 
-Run commands from the repo root. Node 26 runs the `.ts` files directly.
+In the qaFramework repo (`src/pairwise.ts` exists), run the commands below from
+the repo root; Node 26 runs the `.ts` files directly. In any other project, call
+the `qa-framework` MCP tools `bva`, `ep` and `pairwise` instead: the arguments
+are the same flags without `--`, plus `cwd`, the absolute workspace root, for
+example `{"cwd": "/abs/project", "spec": "generated/x/spec.json", "debug": true,
+"out": "generated/x/cases.json"}`. The report and errors come back as text.
+The `pairwise` tool description gives the reference spec's absolute path,
+`<root>/fixtures/price-calculation.spec.json`; the other repo files named here
+(`.cursor/agents/...`) are under the same `<root>`.
 
 ## Workflow
 
