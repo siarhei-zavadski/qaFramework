@@ -19,6 +19,8 @@ Open the repo in Cursor or any agent that reads `AGENTS.md`.
 - `Design test cases for: <requirement text>`
 - `Design test cases for <URL or ticket>`
 - `Check coverage of existing-cases.json against this requirement: <text>`
+- `Design tests for the system in /path/to/repo` (reads its stack and config,
+  keeps per-technology skills in `projects/<project>/skills/`)
 
 The agent follows `AGENTS.md` and the `generating-test-cases` skill: it writes
 `generated/<feature>/spec.json`, runs the CLI, and has `test-spec-reviewer`

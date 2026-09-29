@@ -43,9 +43,14 @@ Check the spec against the requirement line by line:
   high price). If not, the partitions behind the condition are wrong.
 - **Expected results**: formulas match the text, including output rounding or
   precision.
+- **Tech skill failure modes**: if you were given a tech skill path
+  (`projects/<project>/skills/<tech>-testing/SKILL.md`), each of its failure
+  modes is covered by a partition or rule, or listed as a gap. Values marked
+  `configured` or `product default` appear as assumptions, not facts.
 - **Technique fit**: nothing that needs state transitions, constraints or
   conditions combining fields (a sum, one field compared to another) is forced
-  into the spec with invented partitions.
+  into the spec with invented partitions. A single transition as a decision
+  table, and enumerated combinations of small enums, are fine.
 
 You may run any `node src/*.ts` command that prints to stdout (no `--out`),
 including `--debug`, `--strength N` and `--verify`, and pipe it through `rg`,

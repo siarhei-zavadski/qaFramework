@@ -20,6 +20,12 @@ invent a spec format; model the requirement as a spec and run the CLI.
 - The reference spec is `fixtures/price-calculation.spec.json` (bands, open
   ranges, booleans, rules).
 
+When the user gives a local repo path and asks for tests of that system or
+its infrastructure, follow the `analysing-system-repo` skill
+(`.cursor/skills/analysing-system-repo/SKILL.md`). It keeps per-project tech
+skills in `projects/<project>/skills/`; treat changes there like code and
+have the user review them before committing.
+
 ## Layout
 
 | Path | Purpose |
@@ -33,6 +39,8 @@ invent a spec format; model the requirement as a spec and run the CLI.
 | `fixtures/` | Tracked acceptance data (test-design.org exercises) |
 | `spec.example.json` | Minimal spec, used by the self-check |
 | `.cursor/skills/generating-test-cases/` | Test design workflow and spec format |
+| `.cursor/skills/analysing-system-repo/` | Repo inventory and per-component test design |
+| `projects/<project>/` | Detected stack and reviewed tech skills per analysed repo |
 | `.cursor/agents/` | `test-case-designer` and `test-spec-reviewer` subagents |
 | `.cursor/rules/typescript-style.mdc` | Code style for `src/**/*.ts` |
 
@@ -43,7 +51,9 @@ Run `npm run format`, then `npm test` (self-check), `npm run typecheck` and
 
 ## Known limits
 
-Not supported: state transitions and workflows, constraints that exclude
-impossible combinations, conditions that combine fields (a sum, a difference,
-one field compared to another), dates as a native type (map them to numbers).
+Not supported: sequences of state transitions and workflows (a single
+transition is a decision table), constraints that exclude impossible
+combinations, conditions that combine fields (a sum, a difference, one field
+compared to another; over small enum domains, write them as rules), dates as
+a native type (map them to numbers).
 Say so instead of working around it in the spec.
