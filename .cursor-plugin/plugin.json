@@ -1,6 +1,6 @@
 {
   "name": "qa-framework",
-  "description": "Test case design with BVA, EP, pairwise/t-wise and decision-table rules.",
+  "description": "Test case design with BVA, EP, pairwise/t-wise and decision-table rules, and a validation gate for agent-written changes.",
   "version": "0.1.0",
   "author": {"name": "Siarhei Zavadski"},
   "license": "MIT",

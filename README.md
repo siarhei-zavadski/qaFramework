@@ -21,6 +21,10 @@ Open the repo in Cursor or any agent that reads `AGENTS.md`.
 - `Check coverage of existing-cases.json against this requirement: <text>`
 - `Design tests for the system in /path/to/repo` (reads its stack and config,
   keeps per-technology skills in `projects/<project>/skills/`)
+- `Validate the agent's change in /path/to/repo (main...feature-x) against:
+  <requirement>` (oracle cases, diff gate, selected tests and mutants at base
+  vs head, transcript claims, and a `change-judge` verdict; runs the repo's
+  code only if you agree)
 
 The agent follows `AGENTS.md` and the `generating-test-cases` skill: it writes
 `generated/<feature>/spec.json`, runs the CLI, and has `test-spec-reviewer`

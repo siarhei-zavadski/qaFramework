@@ -26,6 +26,13 @@ its infrastructure, follow the `analysing-system-repo` skill
 skills in `projects/<project>/skills/`; treat changes there like code and
 have the user review them before committing.
 
+When the user asks to validate, gate or score a change an agent wrote (a
+diff, branch or PR), or for test selection, mutation testing, prompt
+flakiness or trajectory checks, follow the `validating-agent-changes` skill
+(`.cursor/skills/validating-agent-changes/SKILL.md`). It runs the target
+repo's code only with the user's consent, in disposable copies under
+`generated/<change>/`, and ends with the read-only `change-judge` verdict.
+
 ## Layout
 
 | Path | Purpose |
@@ -41,8 +48,9 @@ have the user review them before committing.
 | `spec.example.json` | Minimal spec, used by the self-check |
 | `.cursor/skills/generating-test-cases/` | Test design workflow and spec format |
 | `.cursor/skills/analysing-system-repo/` | Repo inventory and per-component test design |
+| `.cursor/skills/validating-agent-changes/` | Gate for agent-written changes: oracle, diff gate, test selection, mutants, trajectory, flakiness |
 | `projects/<project>/` | Detected stack and reviewed tech skills per analysed repo |
-| `.cursor/agents/` | `test-case-designer` and `test-spec-reviewer` subagents |
+| `.cursor/agents/` | `test-case-designer`, `test-spec-reviewer` and `change-judge` subagents |
 | `.cursor/rules/typescript-style.mdc` | Code style for `src/**/*.ts` |
 | `.cursor-plugin/plugin.json`, `mcp.json` | Cursor plugin manifest (skills, subagents, MCP server) |
 
