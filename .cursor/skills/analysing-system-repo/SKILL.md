@@ -1,6 +1,6 @@
 ---
 name: analysing-system-repo
-description: Designs tests for a system from its local repository. Reads the repo without running anything, lists the technologies it really uses with file:line evidence, keeps one reviewed skill per technology under projects/<project>/skills/, and hands each component to test-case-designer. Use when the user gives a local repo path and asks to design or review tests for the system, its infrastructure or its stack (load balancer, cache, queue, database, API).
+description: Designs tests for a system from its local repository. Reads the repo without running anything, lists the technologies it really uses with file:line evidence, writes their configured values and the official docs' failure modes for the detected versions into a disposable generated/<project>/components.md, and hands each component to test-case-designer. Use when the user gives a local repo path and asks to design or review tests for the system, its infrastructure or its stack (load balancer, cache, queue, database, API).
 ---
 
 # Analysing a system repository
@@ -9,28 +9,31 @@ Input: a local repo path. `<project>` is the kebab-case name of its folder.
 
 ## Rules
 
-- **Sources only.** Every technology, value and skill item cites a repo
+- **Sources only.** Every technology, value and doc item cites a repo
   `file:line`, an official documentation URL (with the version), or the
   user's answer. Anything else is a question, never a default.
 - **Configured is not required.** A value from config is labelled
   `configured, confirm as requirement`; a value from product docs is labelled
   `product default, not configured in repo`. Both are assumptions in the spec
   until the user confirms them.
-- **Knowledge and values stay apart.** Tech skills hold only what is true of
-  the technology at that version. Configured values (TTL, limits, replicas)
-  never go into a skill; the inventory reads them again on every run.
+- **Docs and config stay apart.** In each component section, what the docs
+  say about the technology at that version is listed apart from the values
+  this repo configures (TTL, limits, replicas).
+- **Disposable, never stored here.** Everything goes under `generated/` in the
+  caller's workspace and is rebuilt on every run. Nothing about the analysed
+  system is written into the qaFramework repo.
 - **Read-only and safe.** Never run, build or install anything from the target
   repo. Read only `.env.example`-style templates, never a real `.env`. Never
   copy secrets (keys, passwords, tokens, connection strings with credentials)
-  into `projects/` or `generated/`.
-- **Only what is found.** No skill, component or case for a technology the
+  into `generated/`.
+- **Only what is found.** No component or case for a technology the
   inventory did not find.
 
 ## Workflow
 
 ```
 - [ ] 1. Inventory the repo
-- [ ] 2. Sync tech skills
+- [ ] 2. Read the docs per technology
 - [ ] 3. Design tests per component
 - [ ] 4. Review each spec
 - [ ] 5. Report
@@ -55,68 +58,42 @@ Glob and grep the target repo (for large repos, delegate the scan to the
 OpenAPI and migrations map directly to partitions (see the
 `generating-test-cases` skill); prefer them over prose.
 
-Write two files:
+Write `generated/<project>/components.md` (disposable). It starts with the
+stack table: one row per technology with its role (balancer, cache, queue,
+database, API, ...), product, version and evidence `file:line`. Then one
+section per component:
 
-- `projects/<project>/project.md` (tracked): repo name, then one row per
-  technology: role (balancer, cache, queue, database, API, ...), product,
-  version, evidence `file:line`, skill status (`new`, `reused`, `updated`,
-  `orphaned`). No configured values, no secrets.
-- `generated/<project>/components.md` (disposable): one section per
-  component: product, evidence, configured values each with `file:line` and
-  its label, and the questions found while scanning.
+- product, version and evidence;
+- trust boundary: which inputs arrive from untrusted callers (UI, public
+  HTTP, files) and which are already typed or schema-validated;
+- configured values, each with `file:line` and its label;
+- the questions found while scanning.
 
-If the version can't be found, the version is a question and the skill is
-built for the latest documented version, stated as an assumption.
+No secrets. If the version can't be found, the version is a question, and
+step 2 reads the latest documented version, stated as an assumption.
 
-### 2. Sync tech skills
+### 2. Read the docs per technology
 
-Skills live in `projects/<project>/skills/<tech>-testing/SKILL.md`. They are
-outside `.cursor/skills/` on purpose: only this workflow reads them, only for
-their project.
-
-| Situation | Action |
-| --- | --- |
-| no skill for a found technology | build it from the official docs for the detected version |
-| skill exists, same version | reuse it unchanged |
-| version changed | rebuild it and show the diff in the report |
-| skill whose technology is no longer found | mark `orphaned` in `project.md`, propose deletion, never delete |
-
-Tech skill format:
+For each technology found, read its official docs for the detected version
+and add to its component section:
 
 ```markdown
----
-name: <tech>-testing
-description: Test design knowledge for <product> <version> in <project>.
-product: <product>
-version: <version>
-evidence: <file:line where it was found>
-generated: <YYYY-MM-DD>
----
-
-# <product> <version>
-
-## Dimensions
-- <setting or input that changes behaviour>: <technique hint: BVA at a
-  threshold, set partitions, transition table, formula> (<source>)
-
-## Failure modes
-- <documented failure or risk> (<source>)
-
-## Questions
-- <what the requirement or config must answer> (<source>)
-
-## Gaps
-- <what the CLI can't model: sequences, timing, execution>
+#### Docs: <product> <version>
+- Dimension: <setting or input that changes behaviour>: <technique hint: BVA at a threshold, set partitions, transition table, formula> (<doc URL>)
+- Failure mode: <documented failure or risk> (<doc URL>)
+- Question: <what the requirement or config must answer> (<doc URL or file:line>)
+- Gap: <what the CLI can't model: sequences, timing, execution>
 ```
 
-Every line in Dimensions, Failure modes and Questions ends with its source.
-Drop any item without one.
+Every Dimension, Failure mode and Question line ends with its source. Drop
+any item without one.
 
 ### 3. Design tests per component
 
 Start one `test-case-designer` per component, and give it:
-- the component section from `components.md`, with the labels kept;
-- the tech skill path;
+- the whole component section from `components.md` (configured values with
+  their labels, the trust boundary, and the docs items with their sources)
+  as the context for its step 1;
 - the feature name `<project>/<component>`, so its output goes to
   `generated/<project>/<component>/`.
 
@@ -142,7 +119,10 @@ Modelling patterns for system behaviour (tell the designer which ones apply):
    share of traffic). A threshold outcome is a rule with a literal
    `expected`.
 6. **Shared negative sets.** Injection strings, malformed names and oversized
-   inputs go in `invalid`, one fault per case.
+   inputs go in `invalid`, one fault per case. Not on a string field with
+   lengths: there oversized input is the auto `above` partition, and no
+   string can be an `invalid` value, so put injection and format strings on
+   a field or spec without lengths.
 
 Engine limits: a rule's `when` holds one label per field ("A or B" is two
 rules or one set partition). Formulas have no comparison, `pow` or `mod`.
@@ -151,19 +131,16 @@ There are no constraints between fields, no time and no sequences.
 ### 4. Review
 
 Run `test-spec-reviewer` on each spec. Give it the component section as the
-requirement, plus the tech skill path. On `revise`, fix the spec and
-regenerate.
+requirement and its context. On `revise`, fix the spec and regenerate.
 
 ### 5. Report
 
 Lead with one summary line: components, cases per component, open
 confirmations. Then:
 
-- The stack table from `project.md`.
-- The tech skills created, updated or orphaned. Say that they need review and
-  a commit.
+- The stack table and the `components.md` path.
 - For each component: cases (as `generating-test-cases` step 6 shows them)
-  and the spec and cases paths.
+  and the context, spec and cases paths.
 - Every `configured` and `product default` value to confirm, with its
   `file:line` or URL.
 - The questions and the gaps.

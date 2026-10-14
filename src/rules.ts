@@ -54,16 +54,51 @@ function partitionSamples(spec: Spec, domains: Domains, name: string): Value[] {
 }
 
 /**
+ * Returns `row` when no rule before `rule` matches it; otherwise a copy whose
+ * fields that only earlier rules mention are reassigned so none matches, or
+ * undefined when no assignment does.
+ */
+function escapeEarlierRules(
+  spec: Spec,
+  domains: Domains,
+  rule: Rule,
+  row: Row,
+): Row | undefined {
+  // ponytail: exhaustive search over one sample per partition of the fields
+  // earlier rules mention, run per rule and per captured moved row;
+  // exponential in that field count, fine for real decision tables (a handful
+  // of conditions), use a SAT solver if tables get huge.
+  const earlier = spec.rules.slice(0, spec.rules.indexOf(rule));
+  const captured = (target: Row) =>
+    earlier.some(earlierRule => matches(spec, earlierRule, target));
+  if (!captured(row)) return row;
+  const free = [...new Set(earlier.flatMap(r => Object.keys(r.when)))].filter(
+    name => !(name in rule.when) && name in domains,
+  );
+  const candidate = {...row};
+  const search = (depth: number): boolean => {
+    if (depth === free.length) return !captured(candidate);
+    for (const value of partitionSamples(spec, domains, free[depth])) {
+      candidate[free[depth]] = value;
+      if (search(depth + 1)) return true;
+    }
+    return false;
+  };
+  return search(0) ? candidate : undefined;
+}
+
+/**
  * Builds a row that `rule` matches first. Fields in the rule get a value from
  * the required partition; fields that only earlier rules mention are searched
  * so that no earlier rule matches.
  */
 function rowForRule(spec: Spec, domains: Domains, rule: Rule): Row {
-  // ponytail: exhaustive search over one sample per partition of the fields
-  // earlier rules mention; exponential in that count, fine for real decision
-  // tables (a handful of conditions), use a SAT solver if tables get huge.
   const index = spec.rules.indexOf(rule);
-  const earlier = spec.rules.slice(0, index);
+  for (const name of Object.keys(rule.when)) {
+    if (!(name in domains)) {
+      throw new Error(`rule ${index + 1}: ${name} has no generated values`);
+    }
+  }
   const row: Row = {};
   for (const [name, values] of Object.entries(domains)) {
     const label = rule.when[name];
@@ -78,23 +113,13 @@ function rowForRule(spec: Spec, domains: Domains, rule: Rule): Row {
     }
     row[name] = fit;
   }
-  const free = [...new Set(earlier.flatMap(r => Object.keys(r.when)))].filter(
-    name => !(name in rule.when) && name in domains,
-  );
-  const search = (depth: number): boolean => {
-    if (depth === free.length) return matchRule(spec, row) === rule;
-    for (const value of partitionSamples(spec, domains, free[depth])) {
-      row[free[depth]] = value;
-      if (search(depth + 1)) return true;
-    }
-    return false;
-  };
-  if (!search(0)) {
+  const firstMatch = escapeEarlierRules(spec, domains, rule, row);
+  if (!firstMatch) {
     throw new Error(
       `rule ${index + 1} (${rule.expected}) can never match: earlier rules cover it`,
     );
   }
-  return row;
+  return firstMatch;
 }
 
 /**
@@ -102,7 +127,9 @@ function rowForRule(spec: Spec, domains: Domains, rule: Rule): Row {
  * rule, a row it matches, plus that row with one condition field moved to
  * each of its values (BVA edges included) while the other conditions hold.
  * That catches `>` vs `>=` faults inside multi-field rules, which pairwise
- * and one case per rule both miss. Rows already in `rows` are skipped.
+ * and one case per rule both miss. A moved row that an earlier rule captures
+ * gets the fields outside the rule re-searched, so it still probes this rule.
+ * Rows already in `rows` are skipped.
  */
 export function rowsForRules(spec: Spec, domains: Domains, rows: Row[]): Row[] {
   const seen = new Set(rows.map(row => JSON.stringify(row)));
@@ -117,7 +144,10 @@ export function rowsForRules(spec: Spec, domains: Domains, rows: Row[]): Row[] {
     const base = rowForRule(spec, domains, rule);
     add(base);
     for (const name of Object.keys(rule.when)) {
-      for (const value of domains[name] ?? []) add({...base, [name]: value});
+      for (const value of domains[name]) {
+        const moved = {...base, [name]: value};
+        add(escapeEarlierRules(spec, domains, rule, moved) ?? moved);
+      }
     }
   }
   return extra;

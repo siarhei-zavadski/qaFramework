@@ -26,6 +26,14 @@ const REFERENCE_SPEC = resolve(
   '../fixtures/price-calculation.spec.json',
 );
 
+// Output over MAX_BUFFER_BYTES still fails with ENOBUFS. spawnSync blocks the
+// server, so a stuck CLI is killed after TIMEOUT_MS. stdout and stderr each
+// stop at MAX_RESPONSE_CHARS to keep an agent's context small; `out` writes
+// the full JSON to a file.
+const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+const TIMEOUT_MS = 120_000;
+const MAX_RESPONSE_CHARS = 100_000;
+
 const FLAGS: Record<string, string> = {
   spec: 'Spec file, relative to cwd.',
   out: 'Output file, relative to cwd; omit to get the JSON back.',
@@ -109,6 +117,12 @@ function toArgv(flags: Record<string, unknown>): string[] {
   });
 }
 
+function truncate(text: string, hint = ''): string {
+  return text.length > MAX_RESPONSE_CHARS
+    ? `${text.slice(0, MAX_RESPONSE_CHARS)}\n... truncated${hint}`
+    : text;
+}
+
 function callTool(params: Record<string, unknown>): ToolResult {
   const tool = TOOLS.find(t => t.name === params.name);
   if (!tool) return textResult(`error: unknown tool ${params.name}`, true);
@@ -121,10 +135,15 @@ function callTool(params: Record<string, unknown>): ToolResult {
   const child = spawnSync(
     process.execPath,
     [resolve(import.meta.dirname, `${tool.name}.ts`), ...toArgv(flags)],
-    {cwd, encoding: 'utf8'},
+    {cwd, encoding: 'utf8', maxBuffer: MAX_BUFFER_BYTES, timeout: TIMEOUT_MS},
   );
   if (child.error) return textResult(`error: ${child.error.message}`, true);
-  const text = [child.stdout, child.stderr].filter(Boolean).join('\n');
+  const text = [
+    truncate(child.stdout, '; pass out to write a file'),
+    truncate(child.stderr),
+  ]
+    .filter(Boolean)
+    .join('\n');
   return textResult(text || 'done', child.status !== 0);
 }
 

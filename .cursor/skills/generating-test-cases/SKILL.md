@@ -18,7 +18,7 @@ The `pairwise` tool description gives the reference spec's absolute path,
 ## Workflow
 
 ```
-- [ ] 1. Classify the requirement
+- [ ] 1. Classify the requirement and gather context
 - [ ] 2. Model every input as partitions
 - [ ] 3. Model outcomes as rules (if outputs differ between valid inputs)
 - [ ] 4. Generate and confirm coverage
@@ -26,9 +26,16 @@ The `pairwise` tool description gives the reference spec's absolute path,
 - [ ] 6. Present cases, expected results and assumptions
 ```
 
-### 1. Classify the requirement
+### 1. Classify the requirement and gather context
 
-Read the requirement fully and list:
+Read the requirement fully. A ticket or PR usually changes an existing system, so before modelling write `generated/<feature>/context.md` (disposable) with:
+
+- **Requirement claims**: each rule, threshold and outcome the text states, quoted.
+- **System context**, when a repo, schema or config is in scope: the unchanged contracts, OpenAPI or DB schemas, enums and config defaults the inputs come from, each with `file:line` and a label: `requirement`, `configured (confirm as requirement)` or `default (confirm as requirement)`. Never invent a placeholder value.
+- **Trust boundary**: for each input, whether it crosses an untrusted boundary (UI, public HTTP or CLI, a raw file) or is already constrained by the caller's types or a validated schema (cite it). Step 2 sets the negatives from it.
+- **Modes**: inputs that only matter in one mode or event. Use one spec per mode when the active inputs differ; otherwise put the activating value first (see the negative base row in step 4) and list the ignored combinations as gaps.
+
+Then list:
 
 - **Inputs**: every value the system reads (fields, flags, settings, lengths).
 - **Conditions**: every threshold or category the text mentions ("over 100", "at least 5 kg", "members only").
@@ -45,7 +52,7 @@ Pick techniques from what you found:
 | A condition combines fields (a sum, a difference, one field compared to another) | not supported | model the per-field parts, list the combined condition as a gap |
 | Behaviour depends on history or order (states, workflows) | not supported | say so, design those cases by hand |
 
-Anything the requirement leaves open (inclusive or exclusive bound, precision, upper limit, case sensitivity) is a question for the user, not a guess.
+Anything the requirement leaves open (inclusive or exclusive bound, precision, upper limit, case sensitivity) is a question for the user, not a guess. If a contradiction or a missing definition blocks a meaningful model, ask before generating cases.
 
 ### 2. Model every input as partitions
 
@@ -67,9 +74,9 @@ Write `generated/<feature>/spec.json`. A field is a list of partitions: equivale
 - **A missing `min` or `max` means open-ended.** "200 or more" is `{"min": 200}`.
 - **`step`** is the smallest meaningful increment (1, 0.01 for money, 0.1 for kg). Bounds must be multiples of it.
 - **Gaps and outer sides are filled with invalid partitions automatically**, named `below`, `above` and `gap:<a>:<b>`. To make values outside a range valid, add a partition for them.
-- **Always test negatives, even when the requirement doesn't mention them.** Keep the auto-filled partitions and the default `invalid` values. If the requirement doesn't say how invalid input is handled, keep `expected: invalid` and list "rejection behaviour not specified" as an open question. Use `"autoInvalid": false` or `"invalid": []` only when the input physically can't take such values (a checkbox, a fixed dropdown).
+- **Always test negatives, even when the requirement doesn't mention them.** Keep the auto-filled partitions and the default `invalid` values. If the requirement doesn't say how invalid input is handled, keep `expected: invalid` and list "rejection behaviour not specified" as an open question. Drop them only where step 1 shows the input can't take such values: a checkbox or fixed dropdown can't, so both may go; an internal input whose type the caller's types or a validated schema guarantee needs no wrong-type values (`"invalid": []`), and `"autoInvalid": false` also needs the range itself enforced upstream (schema `minimum`/`maximum`, an enum). Cite the evidence in `context.md`.
 - **`valid: false`** marks a declared class as invalid, for example `{"label": "tooLong", "minLength": 65, "valid": false}`.
-- **`invalid`** lists values of the wrong type or format. Defaults are `["abc", null]` for numbers, `[null]` for strings and `["__invalid__"]` for enums. Add domain-specific ones the requirement implies.
+- **`invalid`** lists values of the wrong type or format. Defaults are `["abc", null]` for numbers, `[null]` for strings and `["__invalid__"]` for enums. Add domain-specific ones the requirement implies. On a string with `minLength`/`maxLength`, every string falls in a length partition, so a string in `invalid` fails the spec and oversized input is already `above`; put format and injection strings on a separate string field or spec without lengths.
 - **Shorthand for simple fields**: `{"type": "number", "min": 18, "max": 65}` is one valid range, and `{"type": "enum", "values": ["PL", "DE"]}` is one partition per value, labelled with the value.
 
 How to model common wording:
@@ -82,7 +89,7 @@ How to model common wording:
 | "1 to 64 characters" | `type: "string", minLength: 1, maxLength: 64` |
 | yes/no flag | `enum` with partitions `values: [true]` and `values: [false]` |
 | country, role, plan | `enum` values, or set partitions grouping values that behave the same (`{"label": "eu", "values": ["PL", "DE"]}`) |
-| format rules (email, date format) | `string` or `enum` set partitions with one representative value per format class, valid and invalid |
+| format rules (email, date format) | set partitions on an `enum` or a `string` without lengths (length values are `x` repeated, so they fail any format), one representative value per format class, valid and invalid |
 | dates, times | `number` in a unit the rule uses (days, minutes), and note the mapping as an assumption |
 | a quantity that can't be negative (age, count, years of service) | close the lowest partition at `min: 0` even if the text doesn't say so |
 | UI limits not in the requirement text (HTML `min`/`max`, placeholders) | not part of the model; list them as an open question |
@@ -102,8 +109,8 @@ When valid inputs lead to different results, add a decision table. The first mat
 
 - `when` maps field names to valid partition labels. Put the most specific rule first.
 - End with the catch-all `{"when": {}}` for "otherwise". Without one, every combination of the valid partitions the rules mention must match a rule, or the CLI names the missing combination.
-- Every rule gets a matching case plus one case per value of each of its condition fields, BVA edges included, with the rule's other conditions held. That tests the boundaries inside multi-field rules (`>` vs `>=` in a 3-condition rule), which pairwise misses, without full 3-wise.
-- `expected` is the outcome as stated: a literal (`"rejected"`, `"gold"`), or `=` and a formula that the CLI computes for each case. Formulas use field names, numbers, `+ - * / ( )`, `min(...)`, `max(...)`, and `round(x, step)`, `floor(x, step)`, `ceil(x, step)`, which round to a multiple of `step` (half up, down, up). Include output rounding when the requirement defines it, or list it as an assumption.
+- Every rule gets a matching case plus one case per value of each of its condition fields, BVA edges included, with the rule's other conditions held. That tests the boundaries inside multi-field rules (`>` vs `>=` in a 3-condition rule), which pairwise misses, without full 3-wise. If an earlier rule captures such a case, the fields outside the rule are re-chosen so no earlier rule matches it; if none works, the case stays as is.
+- `expected` is the outcome as stated: a literal (`"rejected"`, `"gold"`), or `=` and a formula that the CLI computes for each case. Formulas use field names (letters, digits and `_`, not starting with a digit), numbers (`1.5`, `1e-5`), `+ - * / ( )`, a leading `-` or `+`, `min(...)`, `max(...)`, and `round(x, step)`, `floor(x, step)`, `ceil(x, step)`, which round to a multiple of `step` (`round` sends ties toward +infinity like JS `Math.round`, so `round(-2.5, 1)` is -2; `floor` down, `ceil` up). Include output rounding when the requirement defines it, or list it as an assumption.
 - Set `"strength": 3` only when unknown interactions of three inputs, not covered by any rule, are a real risk. It multiplies the case count.
 - With only two fields, `strength: 2` is every combination. When rules describe all the logic, offer `"strength": 1` (each value at least once, plus the rule boundary cases) as a smaller suite and let the user choose.
 
@@ -117,7 +124,7 @@ node src/ep.ts  --spec generated/<feature>/spec.json --out generated/<feature>/e
 node src/pairwise.ts --spec generated/<feature>/spec.json --debug --out generated/<feature>/cases.json
 ```
 
-The BVA and EP files show the chosen values for review. Pairwise derives them itself from `--spec`. If you edit the value files, pass them instead with `--bva`/`--ep`, and keep `--spec` for the rules.
+The BVA and EP files show the chosen values for review. Pairwise derives them itself from `--spec`. If you edit the value files, pass both with `--bva` and `--ep`, and keep `--spec` for the rules; every spec partition needs a value in them (`--bva` alone has no enum, set or `invalid`-list values, `--ep` alone silently drops the BVA edges).
 
 The report goes to stderr. Proceed only when it shows `uncovered: none`, and `uncovered rules: none` when there are rules. A case count a little above the lower bound is normal. `--strength N` overrides the spec.
 
@@ -126,7 +133,7 @@ Output shapes (read `cases`, the file is not an array):
 - `bva.json`, `ep.json`: `{"technique", "fields": {"<name>": [{"label", "value", "valid", "partition"}]}}`
 - `cases.json`: `{"technique", "strength", "cases": [{"id", "valid", "expected", "formula"?, "input": {"<name>": value}, "fault"?}]}`. `expected` is the rule's literal, the computed number for `=` rules (with `formula` holding the text), `valid` without rules, or `invalid`. `fault` names the invalid value of a negative case.
 
-Positive cases combine valid values only. Each negative case has exactly one invalid value, with valid values everywhere else. Don't hand-edit cases to combine invalid values.
+Positive cases combine valid values only; `valid: true` means each value is valid alone, not that the combination is possible. Each negative case is one base row with one value swapped for an invalid one; `--debug` prints `negative base row` and its outcome. If that row matches a rule that already rejects, or another check fails first, every negative is masked: put a value that reaches the validators first in an enum's `values` or set partitions (a range field always starts from its lowest valid range), or use one spec per mode. Don't hand-edit cases to combine invalid values.
 
 Quick single-field answers without a spec file:
 
@@ -136,17 +143,17 @@ node src/bva.ts --name code --type string --min 1 --max 8
 node src/ep.ts --name country --values PL,BY,DE --invalid XX
 ```
 
-To audit a suite written by hand or by another tool (a JSON array of rows, or a cases file; `"-"` means "don't care"):
+To audit a suite written by hand or by another tool (a JSON array of rows, or a cases file; `"-"` means "don't care", except on a field that has `"-"` as a value):
 
 ```bash
 node src/pairwise.ts --spec generated/<feature>/spec.json --verify existing-cases.json
 ```
 
-It exits with code 1 and lists uncovered tuples and rules if coverage is incomplete.
+It exits with code 1 and lists uncovered tuples and rules (`rule N (<expected>)`) if coverage is incomplete. It warns `<field>=<value> is in no domain` for each value of a spec field that is not a generated valid value, without changing the exit code; other columns and `"-"` cells are ignored. It audits positive rows only: it skips `valid: false` cases and doesn't check `expected` or whether invalid values are tested.
 
 ### 5. Review the spec
 
-Give the `test-spec-reviewer` subagent the requirement and the spec path. On
+Give the `test-spec-reviewer` subagent the requirement, `context.md` and the spec path. On
 `revise`, apply the critical fixes, re-run step 4, and ask the user about the
 warnings. If subagents aren't available, or you are running as a subagent
 (for example `test-case-designer`), walk its checklist yourself
@@ -167,7 +174,7 @@ Generated 70 cases for price-calculation: 62 positive (all 66 pairs, lower bound
 | TC-068 | no | 50 | "abc" | false | invalid | | weight: ep invalid:abc |
 ```
 
-List the file paths and every assumption made while modelling (steps, inclusive or exclusive bounds, open ends, added invalid values, unit mappings).
+List the file paths, every assumption made while modelling (steps, inclusive or exclusive bounds, open ends, added invalid values, unit mappings), and the gaps: what the CLI can't model, such as positive rows that are impossible combinations.
 
 ## Errors
 
@@ -175,13 +182,18 @@ The CLI prints `error: <message>` and exits with code 1. The message names the f
 
 - `is not a multiple of step`: fix `step` or the bound
 - `partitions a and b overlap`: bands share a value; move one bound by one step
-- `is in more than one partition`: an `invalid` or set value falls inside a range
+- `is in more than one partition, <a> and <b>`: an `invalid` or set value falls inside a range, or a string inside a length partition; move it outside, or put format strings on a field without lengths
+- `listed twice in`: a value appears twice in one partition; remove one
+- `reserved field name`: `Object.prototype` has the name (`constructor`, `toString`, `__proto__`); rename the field
 - `x=y is not a valid partition`: a rule uses an unknown or invalid label
 - `can never match`: earlier rules cover every row this rule would match; reorder or remove it
 - `no rule matches x=a, y=b`: the table has a hole; add a rule for it or a catch-all `{"when": {}}`
 - `formula ...: unknown name`, `unexpected`, `ends too early`: fix the `=` formula (names are field names; only `round`, `floor`, `ceil`, `min`, `max` exist)
+- `formula ...: field x is not an identifier`: a formula contains a field name that isn't letters, digits and `_`; rename the field (any formula containing the name fails, even as part of `data-b` for field `a-b`)
 - `formula ...: x is "abc", not a number`: the formula uses a field whose valid values aren't numbers
+- `has no value in --bva/--ep files`: a value file lacks a spec partition; pass both files, or `--spec` alone
 - `is valid in one ... and invalid in the other`: edited `--bva`/`--ep` files disagree
+- `exceed the 1000000 budget`: too many t-tuples; lower the strength or reduce values (fewer partitions, or split the spec)
 
 ## Checking the tool itself
 

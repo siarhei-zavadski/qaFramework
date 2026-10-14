@@ -32,7 +32,10 @@ interface Func {
   apply: (args: number[]) => number;
 }
 
-/** Rounds to a multiple of step; round(170.85, 0.1) is 170.9 (half up). */
+/**
+ * Applies `mode` on multiples of step: round(170.85, 0.1) is 170.9, and with
+ * Math.round ties go toward +infinity, so round(-2.5, 1) is -2.
+ */
 function toStep(mode: (value: number) => number): Func {
   return {
     arity: 2,
@@ -48,22 +51,45 @@ const FUNCTIONS: Record<string, Func> = {
   max: {apply: args => Math.max(...args)},
 };
 
+const IDENTIFIER_PATTERN = /^[A-Za-z_]\w*$/;
+
+// The lexer reads a field `order-size` as `order - size`, so such a name is
+// refused instead of misread. Names without a word character, such as `-`,
+// are skipped: they would match the operators of every formula.
+// ponytail: a substring test, so a field `a-b` also refuses `data-b`; lexing
+// field names as whole tokens, longest first, would lift that.
+function findUnlexableName(text: string, names: string[]): string | undefined {
+  return names.find(
+    name =>
+      /\w/.test(name) && !IDENTIFIER_PATTERN.test(name) && text.includes(name),
+  );
+}
+
 /**
- * Parses `text` (without the leading `=`): numbers, field names, `+ - * /`,
- * parentheses, unary minus, `round|floor|ceil(x, step)`, `min(...)`,
- * `max(...)`.
- * Errors are prefixed with `where`.
+ * Parses `text` (without the leading `=`): numbers (`1.5`, `.5`, `1e-5`),
+ * field names, `+ - * /`, parentheses, unary `+` and `-`,
+ * `round|floor|ceil(x, step)`, `min(...)`, `max(...)`.
+ * Errors are prefixed with `where`. A field whose name is not an identifier
+ * fails as soon as `text` contains it.
  */
 export function parseFormula(
   text: string,
   names: string[],
   where: string,
 ): Formula {
-  const tokens = text.match(/\d+(?:\.\d+)?|\.\d+|[A-Za-z_]\w*|\S/g) ?? [];
-  let pos = 0;
   const fail = (reason: string): never => {
     throw new Error(`${where}: formula ${text}: ${reason}`);
   };
+  const unlexableName = findUnlexableName(text, names);
+  if (unlexableName !== undefined) {
+    fail(
+      `field ${unlexableName} is not an identifier (letters, digits and _, not starting with a digit), so formulas cannot use it`,
+    );
+  }
+  const tokens =
+    text.match(/(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?|[A-Za-z_]\w*|\S/g) ??
+    [];
+  let pos = 0;
   const take = (token: string) => {
     if (tokens[pos] !== token) fail(`expected ${token}`);
     pos++;
@@ -86,10 +112,11 @@ export function parseFormula(
     return binary(unary, ['*', '/']);
   }
   function unary(): Node {
-    if (tokens[pos] !== '-') return primary();
+    const sign = tokens[pos];
+    if (sign !== '-' && sign !== '+') return primary();
     pos++;
     const inner = unary();
-    return row => -inner(row);
+    return sign === '+' ? inner : row => -inner(row);
   }
   function call(name: string): Node {
     if (!Object.hasOwn(FUNCTIONS, name))

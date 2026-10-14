@@ -1,8 +1,11 @@
 # Dependencies
 node_modules/
 
-# Generated test cases
+# Generated test cases and analysis context (disposable)
 generated/
+
+# Per-project state never belongs in this repo; write it under generated/
+projects/
 
 # Local editor and agent files (keep project skills, rules and subagents)
 .cursor/*

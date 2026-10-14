@@ -326,6 +326,11 @@ function parseField(raw: unknown): Field {
     throw new Error('every field needs a name');
   }
   const name = raw.name;
+  // Rows and value maps are plain objects keyed by field name, so a name that
+  // Object.prototype defines (`__proto__`, `constructor`) is lost or misread.
+  if (Object.hasOwn(Object.prototype, name)) {
+    throw new Error(`${name}: reserved field name`);
+  }
   if (!isFieldType(raw.type)) {
     throw new Error(`${name}: unknown type ${String(raw.type)}`);
   }
@@ -383,8 +388,14 @@ function parseField(raw: unknown): Field {
     labels.add(p.label);
     for (const value of p.values ?? []) {
       const key = JSON.stringify(value);
-      if (seenValues.has(key) || partitionOf(field, value) !== p) {
-        throw new Error(`${name}: value ${key} is in more than one partition`);
+      const owner = partitionOf(field, value);
+      if (owner !== p) {
+        throw new Error(
+          `${name}: value ${key} is in more than one partition, ${owner?.label} and ${p.label} (ranges and lengths match first, so keep set and invalid values outside them)`,
+        );
+      }
+      if (seenValues.has(key)) {
+        throw new Error(`${name}: value ${key} is listed twice in ${p.label}`);
       }
       seenValues.add(key);
     }
@@ -452,8 +463,10 @@ function unmatchedCombination(
   rules: Rule[],
   fields: Field[],
 ): string | undefined {
-  // ponytail: tries every combination, exponential in the number of fields
-  // the rules mention; it only runs for tables without a catch-all.
+  // ponytail: tries every combination of the fields the rules mention, about
+  // 7M to 21M per second depending on the rules (3^18 takes 18 to 52 s); it
+  // only runs for tables without a catch-all. Upgrade: skip a branch once a
+  // rule whose fields are all assigned matches it, or use a SAT solver.
   const names = new Set(rules.flatMap(rule => Object.keys(rule.when)));
   const mentioned = fields.filter(f => names.has(f.name));
   const combination: Record<string, string> = {};

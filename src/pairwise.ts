@@ -57,6 +57,8 @@ export interface Report {
 const DONT_CARE = '-';
 /** Candidate rows tried per generated row; more is smaller but slower. */
 const CANDIDATES = 8;
+/** Most t-tuples held in memory; larger inputs fail instead of crashing. */
+const MAX_TUPLES = 1_000_000;
 
 function cell(name: string, value: Value): string {
   return `${name}=${JSON.stringify(value)}`;
@@ -137,8 +139,26 @@ export function validDomains(params: Params): Domains {
   return domains;
 }
 
+/** Number of t-tuples of the domains, without building them. */
+function tupleCount(domains: Domains, strength: number): number {
+  // counts[size]: tuples over `size` of the fields seen so far.
+  const counts = [1, ...Array.from<number>({length: strength}).fill(0)];
+  for (const values of Object.values(domains)) {
+    for (let size = strength; size > 0; size--) {
+      counts[size] += counts[size - 1] * values.length;
+    }
+  }
+  return counts[strength];
+}
+
 /** All t-tuples of the domains, keyed by tupleKey. */
 function allTuples(domains: Domains, strength: number): Map<string, Row> {
+  const count = tupleCount(domains, strength);
+  if (count > MAX_TUPLES) {
+    throw new Error(
+      `strength ${strength}: ${count} tuples exceed the ${MAX_TUPLES} budget; lower the strength or reduce values`,
+    );
+  }
   const tuples = new Map<string, Row>();
   for (const names of combinations(namesBySizeDesc(domains), strength)) {
     const rows = names.reduce<Row[]>(
@@ -159,7 +179,7 @@ function rowTuples(
   const known: Row = {};
   for (const name of names) {
     const value = row[name];
-    if (value !== undefined && value !== DONT_CARE) known[name] = value;
+    if (value !== undefined) known[name] = value;
   }
   return combinations(Object.keys(known), strength).map(combo =>
     tupleKey(known, combo),
@@ -204,7 +224,8 @@ function candidateRow(
 export function coveringRows(domains: Domains, strength: number): Row[] {
   // ponytail: greedy AETG, best of CANDIDATES random field orders per row;
   // each row costs O(candidates * fields * values * C(fields, t-1)) key
-  // builds (20 fields x 10 values at t=2 takes ~2.5s). Switch to IPOG if
+  // builds (20 fields x 10 values: ~1 s at t=2; 455k tuples at t=3: ~50 s),
+  // and every tuple is held in memory up to MAX_TUPLES. Switch to IPOG if
   // suites get larger or need to be closer to the lower bound.
   const names = namesBySizeDesc(domains);
   const size = Math.min(strength, names.length);
@@ -278,13 +299,22 @@ function printReport(
     `uncovered:${list(uncovered)}`,
   ];
   if (spec?.rules.length) {
-    const missed = uncoveredRules(spec, rows).map(r => r.expected);
+    const missed = uncoveredRules(spec, rows).map(
+      rule => `rule ${spec.rules.indexOf(rule) + 1} (${rule.expected})`,
+    );
     lines.push(
       `rules covered: ${spec.rules.length - missed.length}/${spec.rules.length}`,
     );
     lines.push(`uncovered rules:${list(missed)}`);
   }
   console.error(lines.join('\n'));
+}
+
+/** The row every negative case starts from: each field's first valid value. */
+function baseRow(domains: Domains): Row {
+  const base: Row = {};
+  for (const [name, values] of Object.entries(domains)) base[name] = values[0];
+  return base;
 }
 
 /**
@@ -304,8 +334,7 @@ export function generateCases(
     ...outcomeOf(spec, input),
     input,
   }));
-  const base: Row = {};
-  for (const [name, values] of Object.entries(domains)) base[name] = values[0];
+  const base = baseRow(domains);
   const negative = Object.entries(params).flatMap(([name, items]) =>
     items
       .filter(i => !i.valid)
@@ -342,6 +371,23 @@ function parseSuite(raw: unknown, file: string): Row[] {
   );
 }
 
+/** Throws when the value files have no value for a partition of the spec. */
+function checkPartitionValues(spec: Spec, params: Params): void {
+  for (const field of spec.fields) {
+    const covered = new Set<string>(
+      (params[field.name] ?? []).map(item => item.partition),
+    );
+    const missing = field.partitions.find(
+      partition => !covered.has(partition.label),
+    );
+    if (missing) {
+      throw new Error(
+        `${field.name}: partition ${missing.label} has no value in --bva/--ep files (pass both, or use --spec alone)`,
+      );
+    }
+  }
+}
+
 if (import.meta.main) {
   run(() => {
     const {values: flags} = parseArgs({
@@ -359,6 +405,7 @@ if (import.meta.main) {
     let params: Params;
     if (files.length) {
       params = merge(files.map(f => parseResult(readJson(f), f)));
+      if (spec) checkPartitionValues(spec, params);
     } else if (spec) {
       params = merge([analyzePartitions(spec), analyzeBoundaries(spec)]);
     } else {
@@ -375,6 +422,27 @@ if (import.meta.main) {
 
     if (flags.verify) {
       const rows = parseSuite(readJson(flags.verify), flags.verify);
+      const known = new Set(
+        Object.entries(domains).flatMap(([name, values]) =>
+          values.map(value => cell(name, value)),
+        ),
+      );
+      const unknown = new Set<string>();
+      for (const row of rows) {
+        for (const [name, value] of Object.entries(row)) {
+          const key = cell(name, value);
+          if (
+            Object.hasOwn(domains, name) &&
+            value !== DONT_CARE &&
+            !known.has(key)
+          ) {
+            unknown.add(key);
+          }
+        }
+      }
+      for (const key of unknown) {
+        console.error(`warning: ${key} is in no domain`);
+      }
       const coverage = report(domains, rows, strength);
       printReport(coverage, spec, rows);
       const missedRules = spec ? uncoveredRules(spec, rows).length : 0;
@@ -386,6 +454,10 @@ if (import.meta.main) {
     if (flags.debug) {
       const rows = cases.filter(c => c.valid).map(c => c.input);
       printReport(report(domains, rows, strength), spec, rows);
+      const base = baseRow(domains);
+      console.error(
+        `negative base row: ${JSON.stringify(base)} (expected ${outcomeOf(spec, base).expected})`,
+      );
     }
     write(flags.out, {technique: `${strength}-wise`, strength, cases});
   });

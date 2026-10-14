@@ -19,20 +19,23 @@ Open the repo in Cursor or any agent that reads `AGENTS.md`.
 - `Design test cases for: <requirement text>`
 - `Design test cases for <URL or ticket>`
 - `Check coverage of existing-cases.json against this requirement: <text>`
-- `Design tests for the system in /path/to/repo` (reads its stack and config,
-  keeps per-technology skills in `projects/<project>/skills/`)
+- `Design tests for the system in /path/to/repo` (reads its stack, config and
+  the official docs into `generated/<project>/components.md`, then designs
+  tests per component)
 - `Validate the agent's change in /path/to/repo (main...feature-x) against:
   <requirement>` (oracle cases, diff gate, selected tests and mutants at base
   vs head, transcript claims, and a `change-judge` verdict; runs the repo's
   code only if you agree)
 
-The agent follows `AGENTS.md` and the `generating-test-cases` skill: it writes
+The agent follows `AGENTS.md` and the `generating-test-cases` skill: it
+gathers the requirement's context in `generated/<feature>/context.md`, writes
 `generated/<feature>/spec.json`, runs the CLI, and has `test-spec-reviewer`
 check the spec. Several requirements get one `test-case-designer` subagent
-each.
+each. Everything it writes stays under `generated/` in your workspace; this
+repo stores nothing about the systems you test.
 
-You get back a table of cases with expected results, the spec and cases file
-paths, and the assumptions and open questions to answer.
+You get back a table of cases with expected results, the context, spec and
+cases file paths, and the assumptions, open questions and gaps.
 
 ## Manual use
 

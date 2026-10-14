@@ -14,7 +14,9 @@ cases by hand.
    shape (the skill says where it is outside the repo). Ignore older files
    under `generated/`.
 2. If the requirement is a URL, fetch it and extract every input, condition
-   and outcome. Quote the requirement lines you rely on.
+   and outcome. Quote the requirement lines you rely on. Write the skill's
+   step 1 context to `generated/<feature>/context.md`, starting from any
+   context you were given (a `components.md` section).
 3. Write `generated/<feature>/spec.json` (kebab-case feature name), then run
    BVA, EP and `pairwise.ts --debug --out generated/<feature>/cases.json`.
    Fix and re-run until the report shows `uncovered: none` and, with rules,
@@ -32,10 +34,14 @@ cases by hand.
 Return, in this order:
 
 - One-line summary: case counts (positive, negative), tuple and rule coverage.
-- The spec path and cases path.
+- The context, spec and cases paths.
 - A markdown table of the cases (ID, valid, inputs, expected, fault). For
   `=` rules, `expected` is already the computed value; add a formula column
   from each case's `formula`.
-- Requirement-to-spec mapping: each partition and rule with the requirement
-  line it comes from.
-- Assumptions and open questions.
+- Requirement-to-spec mapping: each partition and rule with the line it
+  comes from and its source label (`requirement`, `configured`, `default`,
+  `product default` or `assumption`), so the user sees which bounds the
+  requirement states and
+  which come from the surrounding system.
+- Assumptions, open questions and gaps (what the CLI can't model, such as
+  impossible positive rows).
