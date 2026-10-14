@@ -35,9 +35,11 @@ Check the spec against the requirement line by line:
   boundary in the context: an input from an untrusted caller (UI, public HTTP
   or CLI, a raw file) needs both. Flag `"invalid": []` as critical unless the
   input can't take wrong-type values (a checkbox, a fixed dropdown, a type the
-  caller's types or a validated schema guarantee, cited in the context), and
+  caller's types or a validated schema guarantee, cited in the context) or
+  its wrong-type values are set partitions with named rejection rules, and
   `"autoInvalid": false` unless the range itself is enforced upstream (a
-  fixed dropdown, schema `minimum`/`maximum`, an enum). Domain-specific
+  fixed dropdown, schema `minimum`/`maximum`, an enum) or the field is a
+  relation field whose outer classes are still valid input. Domain-specific
   invalid values the requirement implies (for example lowercase country
   codes) are present. On
   a string field with `minLength`/`maxLength`, don't ask for invalid strings
@@ -47,8 +49,10 @@ Check the spec against the requirement line by line:
   lengths.
 - **Negative base row**: every negative case is the `negative base row` that
   `--debug` prints, with one value swapped. That row must reach each
-  validator: if it matches a rule that already rejects, or trips another
-  check first, every negative is masked. Ask for a value that reaches the
+  validator: if the system rejects it (by a rule or another check) before
+  it checks the swapped value, every negative is masked; a rejecting
+  outcome is harmless when the context shows that input validation runs
+  first. Ask for a value that reaches the
   validators first in an enum's `values` or set partitions (a range field
   always starts from its lowest valid range), or one spec per mode.
 - **Context and mode coupling**: a field that only matters in one mode or
@@ -69,10 +73,14 @@ Check the spec against the requirement line by line:
   of its documented failure modes is covered by a partition or rule, or
   listed as a gap. Values labelled `configured`, `default` or
   `product default` appear as assumptions, not facts.
-- **Technique fit**: nothing that needs state transitions, constraints or
-  conditions combining fields (a sum, one field compared to another) is forced
-  into the spec with invented partitions. A single transition as a decision
-  table, and enumerated combinations of small enums, are fine.
+- **Technique fit**: a condition between fields, a single state transition
+  or a set of possible pairs follows the skill's "Conditions between
+  fields": a relation field or a configuration enum, its adapter conversion
+  quoted in the context and checked against the requirement, one fault per
+  negative after the conversion, every relation an outcome depends on
+  modelled or pinned, and each history value pinned by a rule naming its
+  event. Nothing is forced into partitions invented on the original fields;
+  generated sequences of events and timing are listed as gaps.
 
 You may run any `node src/*.ts` command that prints to stdout (no `--out`),
 including `--debug`, `--strength N` and `--verify`, and pipe it through `rg`,

@@ -15,7 +15,10 @@ export interface Formula {
 }
 
 // ponytail: results keep 12 significant digits to drop float noise such as
-// 0.1 + 0.2; exact decimal arithmetic would need a decimal library.
+// 0.1 + 0.2 or 1.001 * x - x, so round(x, 0.01) is exact only below 1e10,
+// and floor and ceil treat a value within about |x| * 5e-12 of a multiple as
+// on it (at step 0.01 they act like round from 1e9); more digits misround
+// such differences. BigInt rationals would lift both.
 function clean(value: number): number {
   return Number(value.toPrecision(12));
 }

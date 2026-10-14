@@ -34,14 +34,15 @@ cases by hand.
 Return, in this order:
 
 - One-line summary: case counts (positive, negative), tuple and rule coverage.
-- The context, spec and cases paths.
+- The context, spec and cases paths, plus the adapter and
+  `cases.system.json` when the spec has an adapter.
 - A markdown table of the cases (ID, valid, inputs, expected, fault). For
   `=` rules, `expected` is already the computed value; add a formula column
   from each case's `formula`.
 - Requirement-to-spec mapping: each partition and rule with the line it
   comes from and its source label (`requirement`, `configured`, `default`,
   `product default` or `assumption`), so the user sees which bounds the
-  requirement states and
-  which come from the surrounding system.
+  requirement states and which come from the surrounding system, plus the
+  adapter conversion of each relation or configuration field.
 - Assumptions, open questions and gaps (what the CLI can't model, such as
   impossible positive rows).

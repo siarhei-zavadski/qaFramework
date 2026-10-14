@@ -30,12 +30,17 @@ Open the repo in Cursor or any agent that reads `AGENTS.md`.
 The agent follows `AGENTS.md` and the `generating-test-cases` skill: it
 gathers the requirement's context in `generated/<feature>/context.md`, writes
 `generated/<feature>/spec.json`, runs the CLI, and has `test-spec-reviewer`
-check the spec. Several requirements get one `test-case-designer` subagent
-each. Everything it writes stays under `generated/` in your workspace; this
-repo stores nothing about the systems you test.
+check the spec. When a condition links fields (an end date after a start
+date, a ratio, one step of a state machine), the spec replaces one input, and
+the agent also writes `adapter.mjs` and `cases.system.json`: the same cases
+with your system's real inputs, which your tests read. Several requirements
+get one `test-case-designer` subagent each. Everything it writes stays under
+`generated/` in your workspace; this repo stores nothing about the systems
+you test.
 
 You get back a table of cases with expected results, the context, spec and
-cases file paths, and the assumptions, open questions and gaps.
+cases file paths (plus the adapter and `cases.system.json` when there is
+one), and the assumptions, open questions and gaps.
 
 ## Manual use
 
@@ -66,7 +71,8 @@ not loaded.
 npm test && npm run typecheck && npm run format:check
 ```
 
-Not supported: see "Known limits" in [`AGENTS.md`](AGENTS.md).
+Limits, and how conditions between fields and state transitions are modelled
+instead: see "Known limits" in [`AGENTS.md`](AGENTS.md).
 
 ## License
 

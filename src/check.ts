@@ -147,6 +147,13 @@ rejects(
   {fields: [{name: 'x', type: 'number', min: 0, invalid: [3]}]},
   /more than one partition/,
 );
+// An off-step value is in no range, so it can be an invalid value.
+assert.deepEqual(
+  partitionValues(field({type: 'number', min: 1, max: 9, invalid: [1.5]})).at(
+    -1,
+  ),
+  {label: 'invalid:1.5', value: 1.5, valid: false, partition: 'invalid:1.5'},
+);
 rejects(
   {
     fields: [
@@ -174,6 +181,30 @@ for (const name of ['__proto__', 'constructor']) {
     {fields: [{name, type: 'number', min: 0, max: 1}]},
     /reserved field name/,
   );
+}
+// A misspelt key fails at every level instead of being ignored.
+const goodField = {name: 'x', type: 'number', min: 0};
+for (const [raw, message] of [
+  [{fields: [goodField], strenght: 3}, /spec: unknown key strenght/],
+  [{fields: [{...goodField, autoinvalid: false}]}, /x: .* autoinvalid/],
+  [
+    {
+      fields: [
+        {name: 'x', type: 'number', partitions: [{label: 'a', minn: 0}]},
+      ],
+    },
+    /x\.a: .* minn/,
+  ],
+  [
+    {fields: [{...goodField, partitions: [{label: 'a', min: 0}]}]},
+    /x: unknown key min/,
+  ],
+  [
+    {fields: [goodField], rules: [{wehn: {}, expected: 'e'}]},
+    /rule 1: .* wehn/,
+  ],
+] as const) {
+  rejects(raw, message);
 }
 rejects(
   {
@@ -316,6 +347,17 @@ assert.deepEqual(
     priceCases.map(c => c.input),
   ),
   [],
+);
+// A value in no valid partition decides no rule that names it, so an
+// off-step price can't credit `{card: yes}`, while a `-` weight still
+// credits the catch-all for a mid price without a card.
+assert.equal(
+  uncoveredRules(priceCalc, [{price: 250.05, weight: 2.5, card: true}]).length,
+  priceCalc.rules.length,
+);
+assert.deepEqual(
+  uncoveredRules(priceCalc, [{price: 150, weight: '-', card: false}]),
+  priceCalc.rules.slice(0, -1),
 );
 interface PriceLogic {
   high: (price: number) => boolean;

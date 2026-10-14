@@ -112,9 +112,9 @@ Modelling patterns for system behaviour (tell the designer which ones apply):
    assumption. Another configuration needs another spec.
 3. **Cross-field over small domains: enumerate.** When both sides are small
    enums (W and R with N = 3), list the combinations as rules.
-4. **A single transition is a decision table.** The inputs are the current
-   state plus the event or counter bands, and `expected` is the next state.
-   Sequences of transitions are gaps.
+4. **A single transition is a decision table** over reachable
+   configurations, as in `generating-test-cases` step 2 (conditions between
+   fields). Sequences of transitions are gaps.
 5. **Computed values are `=` formulas** (availability, downtime, capacity,
    share of traffic). A threshold outcome is a rule with a literal
    `expected`.
@@ -126,7 +126,8 @@ Modelling patterns for system behaviour (tell the designer which ones apply):
 
 Engine limits: a rule's `when` holds one label per field ("A or B" is two
 rules or one set partition). Formulas have no comparison, `pow` or `mod`.
-There are no constraints between fields, no time and no sequences.
+There are no constraints between fields (model relations as in
+`generating-test-cases` step 2), no time and no sequences.
 
 ### 4. Review
 

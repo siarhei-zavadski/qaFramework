@@ -8,18 +8,35 @@ import {partitionOf, type Rule, type Spec, type Value} from './spec.ts';
 type Row = Record<string, Value>;
 type Domains = Record<string, Value[]>;
 
-function matches(spec: Spec, rule: Rule, row: Row): boolean {
-  return Object.entries(rule.when).every(([name, label]) => {
+/**
+ * Whether the row matches the rule; undefined when no named value rules it
+ * out but one is in no valid partition (an off-step number, a `-` cell).
+ */
+function ruleMatch(spec: Spec, rule: Rule, row: Row): boolean | undefined {
+  let decided = true;
+  for (const [name, label] of Object.entries(rule.when)) {
     const field = spec.fields.find(f => f.name === name);
-    return (
-      field !== undefined && partitionOf(field, row[name])?.label === label
-    );
-  });
+    const partition = field && partitionOf(field, row[name]);
+    if (!partition?.valid) decided = false;
+    else if (partition.label !== label) return false;
+  }
+  return decided || undefined;
 }
 
-/** The first rule matching the row; undefined when the spec has no rules. */
+function matches(spec: Spec, rule: Rule, row: Row): boolean {
+  return ruleMatch(spec, rule, row) === true;
+}
+
+/**
+ * The first rule matching the row; undefined when the spec has no rules, or
+ * when a value the row's rule depends on is in no valid partition.
+ */
 export function matchRule(spec: Spec, row: Row): Rule | undefined {
-  return spec.rules.find(rule => matches(spec, rule, row));
+  for (const rule of spec.rules) {
+    const match = ruleMatch(spec, rule, row);
+    if (match !== false) return match ? rule : undefined;
+  }
+  return undefined;
 }
 
 /** Expected result of a valid row, with the formula when it was computed. */

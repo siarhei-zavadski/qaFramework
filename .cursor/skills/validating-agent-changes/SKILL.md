@@ -71,7 +71,7 @@ Predictive ordering: rank the selection by how often each test file changed in t
 
 **Behaviour change.** Run the selected tests in both copies. Rerun each failure up to twice; a test whose result changes at the same ref is `flaky`, not a regression. Classify each test as `regression` (pass to fail), `fixed`, `new`, `removed`, `still failing` or `unchanged`. If the repo has a coverage tool, report line and branch coverage of the changed lines only.
 
-**Oracle.** Add one table-driven test to the head copy, in the repo's framework, that feeds each case's `input` to the unit under test and asserts `expected`. If the entry point isn't obvious, ask; don't guess an API. Run it at base too: cases that fail at base and pass at head are what the change delivers.
+**Oracle.** Add one table-driven test to the head copy, in the repo's framework, that feeds each case's `input` (read from `cases.system.json` when the spec has an adapter) to the unit under test and asserts `expected`. If the entry point isn't obvious, ask; don't guess an API. Run it at base too: cases that fail at base and pass at head are what the change delivers.
 
 **Mutants.** Mutate the changed lines only:
 

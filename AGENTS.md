@@ -64,13 +64,22 @@ Run `npm run format`, then `npm test` (self-check), `npm run typecheck` and
 
 ## Known limits
 
-Not supported: sequences of state transitions and workflows (a single
-transition is a decision table), constraints that exclude impossible
-combinations, conditions that combine fields (a sum, a difference, one field
-compared to another; over small enum domains, write them as rules), dates as
-a native type (map them to numbers).
-Say so instead of working around it in the spec.
+Not supported natively: conditions that combine fields, single state
+transitions and constraints that exclude impossible combinations (model them
+as a relation field or a configuration enum with an adapter, skill step 2),
+and dates (map them to numbers). Not supported at all: generated sequences
+of events (an expected trace would need a second implementation of the
+system), timing and races. Say so and list them as gaps instead of inventing
+partitions on the original fields.
 
+- Formulas have no power, comparison or string functions, and results keep
+  12 significant digits: `round(x, 0.01)` drops the cents of
+  10,000,000,000.01, and a computed result that falls short of a half step
+  by less than the 12th digit still rounds up (4,744 of 5,315,415,000
+  annuity rows).
+- Regulated use: cases carry no requirement IDs (trace them through the
+  designer's requirement-to-spec mapping), and the tool is not qualified or
+  validated for any standard.
 - `valid: true` on a case means each value is valid on its own, not that the
   combination is possible; list impossible positive rows as gaps.
 - A string field with `minLength`/`maxLength` can't hold a string as an

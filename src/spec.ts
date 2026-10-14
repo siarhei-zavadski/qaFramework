@@ -145,13 +145,18 @@ export function pointToValue(field: Field, point: number): Value {
   return scale ? scale.toValue(point) : point;
 }
 
-/** Partition that a value falls into, or undefined if it is in none. */
+/**
+ * Partition that a value falls into, or undefined if it is in none. A range
+ * holds only values on the step, so an off-step value can be `invalid`.
+ */
 export function partitionOf(field: Field, value: Value): Partition | undefined {
   const point = FIELD_TYPES[field.type].scale?.toPoint(value);
   return field.partitions.find(p =>
     p.values
       ? p.values.some(v => sameValue(v, value))
       : point !== undefined &&
+        round(Math.round(point / field.step) * field.step, field.step) ===
+          point &&
         (p.min === undefined || point >= p.min) &&
         (p.max === undefined || point <= p.max),
   );
@@ -194,6 +199,24 @@ function optionalNumber(
   return value;
 }
 
+// A misspelt key would otherwise be ignored: `vaild: false` leaves a class
+// valid, and `minn` opens a range downward.
+function rejectUnknownKeys(
+  raw: Record<string, unknown>,
+  known: string[],
+  where: string,
+): void {
+  const unknown = Object.keys(raw).find(key => !known.includes(key));
+  if (unknown !== undefined) {
+    throw new Error(`${where}: unknown key ${unknown}`);
+  }
+}
+
+function rangeKeys(type: FieldType): string[] {
+  const scale = FIELD_TYPES[type].scale;
+  return scale ? [scale.minKey, scale.maxKey] : [];
+}
+
 function valueList(x: unknown, where: string): Value[] {
   if (!Array.isArray(x) || !x.length || !x.every(isValue)) {
     throw new Error(`${where} must be a non-empty array of values`);
@@ -210,6 +233,7 @@ function parsePartition(
     throw new Error(`${where}: every partition needs a label`);
   }
   const at = `${where}.${raw.label}`;
+  rejectUnknownKeys(raw, ['label', 'valid', 'values', ...rangeKeys(type)], at);
   if (raw.valid !== undefined && typeof raw.valid !== 'boolean') {
     throw new Error(`${at}: valid must be a boolean`);
   }
@@ -245,7 +269,10 @@ function shorthandPartitions(
       values: [value],
     }));
   }
-  return [parsePartition({...raw, label: 'valid', valid: true}, type, name)];
+  const range = Object.fromEntries(rangeKeys(type).map(key => [key, raw[key]]));
+  return [
+    parsePartition({...range, label: 'valid', values: raw.values}, type, name),
+  ];
 }
 
 /**
@@ -321,6 +348,16 @@ function completeRanges(
   return complete;
 }
 
+const FIELD_KEYS = [
+  'name',
+  'type',
+  'step',
+  'partitions',
+  'values',
+  'invalid',
+  'autoInvalid',
+];
+
 function parseField(raw: unknown): Field {
   if (!isRecord(raw) || typeof raw.name !== 'string' || !raw.name) {
     throw new Error('every field needs a name');
@@ -335,6 +372,9 @@ function parseField(raw: unknown): Field {
     throw new Error(`${name}: unknown type ${String(raw.type)}`);
   }
   const type = raw.type;
+  // Field-level bounds are shorthand; with partitions they would be ignored.
+  const shorthand = raw.partitions === undefined ? rangeKeys(type) : [];
+  rejectUnknownKeys(raw, [...FIELD_KEYS, ...shorthand], name);
   const info = FIELD_TYPES[type];
   const step = optionalNumber(raw, 'step', name) ?? 1;
   if (!(step > 0)) throw new Error(`${name}: step must be > 0`);
@@ -420,6 +460,7 @@ function parseRules(raw: unknown, fields: Field[]): Rule[] {
     ) {
       throw new Error(`${where}: needs an expected string`);
     }
+    rejectUnknownKeys(rule, ['when', 'expected'], where);
     const when = rule.when ?? {};
     if (!isRecord(when)) throw new Error(`${where}: when must be an object`);
     const conditions: Record<string, string> = {};
@@ -498,6 +539,7 @@ export function parseSpec(raw: unknown): Spec {
   if (!isRecord(raw) || !Array.isArray(raw.fields) || !raw.fields.length) {
     throw new Error('spec.fields must be a non-empty array');
   }
+  rejectUnknownKeys(raw, ['fields', 'rules', 'strength'], 'spec');
   const fields = raw.fields.map(parseField);
   const names = new Set<string>();
   for (const {name} of fields) {
