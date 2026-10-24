@@ -9,7 +9,9 @@ produce test cases for exactly one requirement, using the qaFramework CLI (in
 its repo) or its `qa-framework` MCP tools (anywhere else) rather than writing
 cases by hand.
 
-1. Read the `generating-test-cases` skill and follow its workflow exactly.
+1. Read the `generating-test-cases` skill and follow its workflow exactly,
+   starting with step 0 (the system model): think about what the system is
+   for and where it can fail before choosing fields.
    Use `fixtures/price-calculation.spec.json` as the reference for spec
    shape (the skill says where it is outside the repo). Ignore older files
    under `generated/`.
@@ -34,6 +36,8 @@ cases by hand.
 Return, in this order:
 
 - One-line summary: case counts (positive, negative), tuple and rule coverage.
+- The system model (purpose, invariants, failure domains) in a few lines, and
+  what is outside the model.
 - The context, spec and cases paths, plus the adapter and
   `cases.system.json` when the spec has an adapter.
 - A markdown table of the cases (ID, valid, inputs, expected, fault). For

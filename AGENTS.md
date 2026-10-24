@@ -10,6 +10,9 @@ When the user asks to design, generate or review test cases or test data for
 a requirement (text, URL, ticket), follow the `generating-test-cases` skill
 (`.cursor/skills/generating-test-cases/SKILL.md`). Don't hand-write cases or
 invent a spec format; model the requirement as a spec and run the CLI.
+Start from the skill's step 0: model what the system is for, its invariants
+and failure domains before fields, and keep only partitions and cases that
+trace to them. Coverage figures describe the spec, not the system.
 
 - Delegate one requirement per `test-case-designer` subagent when there are
   several. Before presenting cases, run the `test-spec-reviewer` subagent on

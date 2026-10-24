@@ -10,6 +10,7 @@ In the qaFramework repo (`src/pairwise.ts` exists), run the commands below from 
 ## Workflow
 
 ```
+- [ ] 0. Model the system (purpose, invariants, failure domains)
 - [ ] 1. Classify the requirement and gather context
 - [ ] 2. Model every input as partitions
 - [ ] 3. Model outcomes as rules (if outputs differ between valid inputs)
@@ -17,6 +18,24 @@ In the qaFramework repo (`src/pairwise.ts` exists), run the commands below from 
 - [ ] 5. Review the spec (`test-spec-reviewer` subagent) and apply its fixes
 - [ ] 6. Present cases, expected results and assumptions
 ```
+
+### 0. Model the system
+
+Coverage numbers measure the spec, not the system. Before any field or partition, think like the system's owner, not like a coverage tool, and write a short `## System model` section at the top of `generated/<feature>/context.md` (disposable). Stay at the level of behaviour; the requirement's wording and any examples here are illustrations, never a checklist.
+
+- **Purpose**: what the system or change is for, and who relies on it.
+- **Actors and boundaries**: what interacts with it, and what it trusts.
+- **Invariants**: what must always or never hold, whatever the inputs.
+- **State and environment**: what behaviour depends on besides inputs (topology, configuration, history, timing, peers).
+- **Failure domains**: how it can fail or be abused, and what a user would notice.
+- **Oracles**: how a tester would know a result is right; where none exists, that is an open question.
+- **Technique fit**: for each item, `input-domain` (the CLI models it) or `outside the model` (a gap, designed by hand or left to other test levels).
+
+Rules that follow:
+
+- Every partition, rule and case traces to a requirement claim, an invariant or a failure domain. A combination that makes no sense for the system is dropped or listed as a gap, never generated to raise coverage.
+- If most of the system model is `outside the model`, say so first and model only the input-domain part; don't force the rest into partitions.
+- Report coverage as coverage of the model, with the model's gaps beside it.
 
 ### 1. Classify the requirement and gather context
 
@@ -170,7 +189,7 @@ Generated 70 cases for price-calculation: 62 positive (all 66 pairs, lower bound
 | TC-068 | no | 50 | "abc" | false | invalid | | weight: ep invalid:abc |
 ```
 
-List the file paths, every assumption made while modelling (steps, inclusive or exclusive bounds, open ends, added invalid values, unit mappings, adapter conversions), and the gaps: what the CLI can't model, such as positive rows that are impossible combinations.
+List the file paths, the system model's gaps (what is `outside the model`), every assumption made while modelling (steps, inclusive or exclusive bounds, open ends, added invalid values, unit mappings, adapter conversions), and the gaps: what the CLI can't model, such as positive rows that are impossible combinations. State that the coverage figures are coverage of the spec, not of the system.
 
 ## Errors
 

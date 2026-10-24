@@ -20,6 +20,12 @@ text (exercise sites often ship their rules and reference logic there).
 
 Check the spec against the requirement line by line:
 
+- **System model and relevance**: the context has a system model (purpose,
+  invariants, failure domains, oracles). Flag coverage-chasing: a partition,
+  rule or case that traces to no requirement claim, invariant or failure
+  domain, a combination that makes no sense for the system, and an important
+  failure domain with no partition, rule or listed gap. Coverage figures
+  describe the spec, not the system.
 - **Bounds**: every threshold in the text maps to a partition edge, with the
   right inclusive or exclusive reading ("exceeds 100" is `min: 100.1` at step
   0.1, "reaches 200" is `min: 200`). No threshold is missing.
