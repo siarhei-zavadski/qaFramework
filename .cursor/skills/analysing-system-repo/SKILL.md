@@ -53,7 +53,7 @@ Glob and grep the target repo (for large repos, delegate the scan to the
 | dependency manifests (`package.json`, `pom.xml`, `requirements.txt`, `go.mod`, ...) | client libraries: Redis, Kafka, AMQP, DB drivers, HTTP frameworks |
 | app config (`application.yml`, `settings.*`, `.env.example`) | TTLs, pool sizes, retries, timeouts, feature flags |
 | OpenAPI or Swagger specs | endpoints, methods, field types, `minLength`/`maxLength`, `enum`, required |
-| DB migrations, schema files | column types, lengths, `NOT NULL`, `CHECK`, unique keys |
+| DB migrations, schema files | column types, lengths, scale, `NOT NULL`, `CHECK`, unique keys, and other readers of the same column |
 
 OpenAPI and migrations map directly to partitions (see the
 `generating-test-cases` skill); prefer them over prose.

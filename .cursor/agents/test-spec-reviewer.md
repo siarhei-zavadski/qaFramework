@@ -21,11 +21,15 @@ text (exercise sites often ship their rules and reference logic there).
 Check the spec against the requirement line by line:
 
 - **System model and relevance**: the context has a system model (purpose,
-  invariants, failure domains, oracles). Flag coverage-chasing: a partition,
-  rule or case that traces to no requirement claim, invariant or failure
-  domain, a combination that makes no sense for the system, and an important
-  failure domain with no partition, rule or listed gap. Coverage figures
-  describe the spec, not the system.
+  invariants, failure domains, oracles covering every output field and side
+  effect). Flag coverage-chasing: a partition, rule or case that traces to no
+  requirement claim, invariant or failure domain, a combination that makes no
+  sense for the system, and an important failure domain with no partition,
+  rule or listed gap. When a repo or schema is in scope, flag missing one-hop
+  context (what writes each input, how it encodes failures, sentinel values,
+  what reads each output, and whether the code path performing an action
+  checks a state that a reader or UI hides). Coverage figures describe the
+  spec, not the system.
 - **Bounds**: every threshold in the text maps to a partition edge, with the
   right inclusive or exclusive reading ("exceeds 100" is `min: 100.1` at step
   0.1, "reaches 200" is `min: 200`). No threshold is missing.
@@ -61,11 +65,19 @@ Check the spec against the requirement line by line:
   first. Ask for a value that reaches the
   validators first in an enum's `values` or set partitions (a range field
   always starts from its lowest valid range), or one spec per mode.
+- **Rejection order**: when two checks can reject the same input, one-fault
+  negatives never show which check wins; ask for a valid partition row where
+  both conditions hold and a rule naming the winning reason.
 - **Context and mode coupling**: a field that only matters in one mode or
   event (`cardNumber` only when `payment` is `card`) isn't crossed with the
   modes that ignore it, unless the spec documents those rows as gaps; when
-  the active inputs differ between modes, ask for one spec per mode.
-- **Rules**: every outcome in the text has a rule; conditions that act together
+  the active inputs differ between modes, ask for one spec per mode. When
+  configuration has a default and per-key overrides, check that 2+ keys with
+  a non-first key selected, a missing key, and a present key with an omitted
+  or `null` optional field are covered.
+- **Rules**: every outcome in the text has a rule; an action owed when
+  something finishes is crossed with every terminal state (`completed`,
+  `partial+cancelled`, `expired`, `failed`); conditions that act together
   (3 or more fields) have their own rule placed before the general ones; the
   catch-all's `expected` (if any) is correct; computed outcomes are `=`
   formulas with the stated rounding, not text; no rule is shadowed.
@@ -85,7 +97,11 @@ Check the spec against the requirement line by line:
   quoted in the context and checked against the requirement, one fault per
   negative after the conversion, every relation an outcome depends on
   modelled or pinned, and each history value pinned by a rule naming its
-  event. Nothing is forced into partitions invented on the original fields;
+  event. Check that multi-item accumulation includes `step1Exact` and
+  `step1Plus` (with unequal item rates when `max`, `min` or tiers apply),
+  two thresholds on one value use a configuration enum with the normal order
+  first, and scale-sensitive decimals or integers past 2^53 use string set
+  values. Nothing is forced into partitions invented on the original fields;
   generated sequences of events and timing are listed as gaps.
 
 You may run any `node src/*.ts` command that prints to stdout (no `--out`),

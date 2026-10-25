@@ -11,7 +11,7 @@ This skill chains the others: `analysing-system-repo` gives the stack and its to
 
 ## Rules
 
-- **Evidence or unverified.** Every finding cites a repo `file:line`, a command with its exit code, or a transcript line. A claim without evidence is `unverified`, never a pass.
+- **Evidence or unverified.** Every finding cites a repo `file:line`, a command with its exit code, or a transcript line. A claim without evidence is `unverified`, never a pass. A defect on a changed line that predates the change is reported, marked `pre-existing`, never dropped.
 - **The oracle comes from the requirement and the base.** Model it from the requirement plus the unchanged contracts, schemas, types, configs and entry-point signatures at `<base>` (`git show <base>:<path>`), never from the head implementation or the diff, so the cases match the system's real inputs but can't inherit the change's bugs.
 - **Execution is opt-in.** Running anything from the target repo (tests, linters, builds, installs; their configs can run code) needs the user's yes for that repo. Without it, run the read-only steps and mark the rest `not run`.
 - **Sandboxed, scoped, redacted.** With consent, run only in disposable copies under `generated/<change>/`, never in the user's working tree. Keep the shell sandbox on (never request `all`); network only for dependency installs. No real `.env`, cloud credentials or tokens; tests that need shared environments or external services are `not run`. Before writing a log or quoting output, replace secrets and personal data with `<redacted:kind>`. Subagents get the requirement, specs and evidence, never credentials.
@@ -49,6 +49,7 @@ The diff gate runs nothing and works for any language. Read `git diff -U0 <base>
 | suppressed checks | added `eslint-disable`, `@ts-ignore`, `# type: ignore`, `# noqa`, `//nolint`, `@SuppressWarnings`; lowered coverage or lint thresholds | critical unless explained |
 | secrets | keys, tokens, passwords, credentialed URLs, private key headers | critical (redacted in the report) |
 | new dependencies | added manifest or lock file entries | warning: name, version, reason |
+| contract change | a public record, type, schema, endpoint or message format changed in place; readers and writers of mixed versions | warning: name both sides |
 | CI, permissions, infra | CI workflows, Dockerfiles, IAM, RBAC, `.gitignore` | warning |
 | out of scope | files no requirement line or intent claim explains | warning; the judge decides |
 | hygiene | `--check` output (whitespace, conflict markers), debug prints | info |
@@ -71,7 +72,7 @@ Predictive ordering: rank the selection by how often each test file changed in t
 
 **Behaviour change.** Run the selected tests in both copies. Rerun each failure up to twice; a test whose result changes at the same ref is `flaky`, not a regression. Classify each test as `regression` (pass to fail), `fixed`, `new`, `removed`, `still failing` or `unchanged`. If the repo has a coverage tool, report line and branch coverage of the changed lines only.
 
-**Oracle.** Add one table-driven test to the head copy, in the repo's framework, that feeds each case's `input` (read from `cases.system.json` when the spec has an adapter) to the unit under test and asserts `expected`. If the entry point isn't obvious, ask; don't guess an API. Run it at base too: cases that fail at base and pass at head are what the change delivers.
+**Oracle.** Add one table-driven test to the head copy, in the repo's framework, that feeds each case's `input` (read from `cases.system.json` when the spec has an adapter) to the unit under test and asserts `expected` plus the system model's output-vector invariants (`reported == before - after`, nothing written on refusal). Where the oracle's system model lists multi-pass sequences, non-happy terminal states or rendering/infra checks as `outside the model`, add a small companion test or probe for them alongside the table. If the entry point isn't obvious, ask; don't guess an API. Run it at base too: cases that fail at base and pass at head are what the change delivers.
 
 **Mutants.** Mutate the changed lines only:
 

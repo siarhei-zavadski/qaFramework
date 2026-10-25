@@ -9,15 +9,7 @@ In the qaFramework repo (`src/pairwise.ts` exists), run the commands below from 
 
 ## Workflow
 
-```
-- [ ] 0. Model the system (purpose, invariants, failure domains)
-- [ ] 1. Classify the requirement and gather context
-- [ ] 2. Model every input as partitions
-- [ ] 3. Model outcomes as rules (if outputs differ between valid inputs)
-- [ ] 4. Generate and confirm coverage
-- [ ] 5. Review the spec (`test-spec-reviewer` subagent) and apply its fixes
-- [ ] 6. Present cases, expected results and assumptions
-```
+Follow steps 0–6 in order.
 
 ### 0. Model the system
 
@@ -28,7 +20,7 @@ Coverage numbers measure the spec, not the system. Before any field or partition
 - **Invariants**: what must always or never hold, whatever the inputs.
 - **State and environment**: what behaviour depends on besides inputs (topology, configuration, history, timing, peers).
 - **Failure domains**: how it can fail or be abused, and what a user would notice.
-- **Oracles**: how a tester would know a result is right; where none exists, that is an open question.
+- **Oracles**: how a tester would know a result is right: every output field and side effect (stored records, emitted events, logs and alerts, rendered state) and the invariants between them (`reported == before - after`, nothing written on refusal); where none exists, that is an open question.
 - **Technique fit**: for each item, `input-domain` (the CLI models it) or `outside the model` (a gap, designed by hand or left to other test levels).
 
 Rules that follow:
@@ -43,6 +35,8 @@ Read the requirement fully. A ticket or PR usually changes an existing system, s
 
 - **Requirement claims**: each rule, threshold and outcome the text states, quoted.
 - **System context**, when a repo, schema or config is in scope: the unchanged contracts, OpenAPI or DB schemas, enums and config defaults the inputs come from, each with `file:line` and a label: `requirement`, `configured (confirm as requirement)` or `default (confirm as requirement)`. Never invent a placeholder value.
+- **One hop out**, when a repo, schema or config is in scope (at `<base>` when validating a change): what writes each input (caller, producer, config layer, persisted or browser state), how it encodes failures, and sentinel values (`0`, `null`, empty) its peers read as unset; what reads each output (column type and scale, client number precision, other readers of the field, alerts on its log level); and, when a reader or UI hides an action for a state, whether the code path performing it checks that state too. Each with `file:line`.
+- **Without sources**, each one-hop item the model depends on is an open question or `outside the model`, never invented, and generation proceeds from the requirement. A sample record, when given, has secrets and personal data replaced by `<redacted:kind>` and stays under `generated/`.
 - **Trust boundary**: for each input, whether it crosses an untrusted boundary (UI, public HTTP or CLI, a raw file) or is already constrained by the caller's types or a validated schema (cite it). Step 2 sets the negatives from it.
 - **Modes**: inputs that only matter in one mode or event. Use one spec per mode when the active inputs differ; otherwise put the activating value first (see the negative base row in step 4) and list the ignored combinations as gaps.
 
@@ -70,14 +64,7 @@ Anything the requirement leaves open (inclusive or exclusive bound, precision, u
 Write `generated/<feature>/spec.json`. A field is a list of partitions: equivalence classes that the requirement treats the same way.
 
 ```json
-{
-  "name": "price", "type": "number", "step": 0.1,
-  "partitions": [
-    {"label": "low", "min": 0, "max": 100},
-    {"label": "mid", "min": 100.1, "max": 199.9},
-    {"label": "high", "min": 200}
-  ]
-}
+{"name": "price", "type": "number", "step": 0.1, "partitions": [{"label": "low", "min": 0, "max": 100}, {"label": "mid", "min": 100.1, "max": 199.9}, {"label": "high", "min": 200}]}
 ```
 
 - **Types**: `number` ranges use `min`/`max`. `string` ranges use `minLength`/`maxLength`. `enum` has only value sets. Any type can have a set partition `{"label", "values": [...]}`.
@@ -110,6 +97,12 @@ How to model common wording:
 - **Ratio or product**: an enum of points that the adapter computes from the other fields, `usagePoint` with `zero`, `on` (`floor(0.8 * quota)`), `off` (`on + 1`) and `max`, since an exact 0.80 exists only for some quotas. Name the other fields in the `on` and `off` rules (`"quota": "valid"`) so each of their values meets both points. A point that can't exist for some combination gets a first rule expecting `invalid`.
 - **Outcomes of the relation** (`rejected:too-long`) are valid partitions with rules: leave its outer classes open-ended or set `"autoInvalid": false`, and declare only the band where the input is invalid (`{"label": "reversed", "max": -1, "valid": false}`). Put the replaced field's own invalid edges in `invalid` next to the defaults (`["abc", null, "checkOut=366"]`) as values the adapter writes through, and its valid edge as a set value when the relation never reaches it (`"checkOut=365"`).
 - **One event in a state machine**, or fields where only some pairs exist: one enum of reachable configurations (`CLOSED/0`, and `CLOSED/2 via fail, fail` when a defect needs accumulated history; the adapter replays it), the event, and amounts relative to the configuration (`under`, `exact`, `over` the threshold). One rule per history value names its event and amount, or pairwise may skip it.
+- **Collections**: when an outcome accumulates over items toward a cap, use 2+ items and adapter-computed points where the target equals the first item's contribution (`step1Exact`) and one step past it (`step1Plus`), like ratio points, with literal outcomes or harness-side invariants (formulas can't read them); with `max`, `min` or tiers over items, give items unequal rates so the dominant one switches inside a step.
+- **Two thresholds on one value** (trigger and target, a maximum and a peer's minimum) are a 3-field condition: model their order as a configuration enum (normal order first, so negatives aren't masked) and the value as named points relative to both; a crossing the system accepts is a valid partition with a rule, its intended handling an open question.
+- **Scoped overrides** (a default and per-key values): 2+ keys with a non-first one selected, a missing key, and a present key with an omitted or `null` optional field. A comment or "later phase" note never removes a reachable path.
+- **Terminal states and passes**: an action owed when something finishes is crossed with every terminal state (`completed`, `partial+cancelled`, `expired`, `failed`); a unit that takes a prior result gets a named history value where an earlier pass changed the same item.
+- **Representation**: JSON numbers drop decimal scale (`3` vs `3.00`) and integers past 2^53, so model them as string set values the adapter passes through.
+- **Rejection order**: when two checks can reject one input, add a valid row where both hold and a rule naming the winning reason; one-fault negatives never show it.
 
 ### 3. Model outcomes as rules
 
@@ -154,13 +147,7 @@ Output shapes (read `cases`, the file is not an array):
 
 Positive cases combine valid values only; `valid: true` means each value is valid alone, not that the combination is possible. Each negative case is one base row with one value swapped for an invalid one; `--debug` prints `negative base row` and its outcome. If the system rejects that row before it checks the swapped value (a rule that rejects first, another check that fails first), every negative is masked: put a value that reaches the validators first in an enum's `values` or set partitions (a range field always starts from its lowest valid range), or use one spec per mode. Don't hand-edit cases to combine invalid values.
 
-Quick single-field answers without a spec file:
-
-```bash
-node src/bva.ts --name price --min 0.01 --max 999.99 --step 0.01
-node src/bva.ts --name code --type string --min 1 --max 8
-node src/ep.ts --name country --values PL,BY,DE --invalid XX
-```
+Quick single-field answers without a spec file: `node src/bva.ts --name price --min 0.01 --max 999.99 --step 0.01`, `node src/bva.ts --name code --type string --min 1 --max 8`, or `node src/ep.ts --name country --values PL,BY,DE --invalid XX`.
 
 To audit a suite written by hand or by another tool (a JSON array of rows, or a cases file; `"-"` means "don't care", except on a field that has `"-"` as a value):
 
@@ -204,13 +191,6 @@ The CLI prints `error: <message>` and exits with code 1. The message names the f
 - `x=y is not a valid partition`: a rule uses an unknown or invalid label
 - `can never match`: earlier rules cover every row this rule would match; reorder or remove it
 - `no rule matches x=a, y=b`: the table has a hole; add a rule for it or a catch-all `{"when": {}}`
-- `formula ...: unknown name`, `unexpected`, `ends too early`: fix the `=` formula (names are field names; only `round`, `floor`, `ceil`, `min`, `max` exist)
-- `formula ...: field x is not an identifier`: a formula contains a field name that isn't letters, digits and `_`; rename the field (any formula containing the name fails, even as part of `data-b` for field `a-b`)
-- `formula ...: x is "abc", not a number`: the formula uses a field whose valid values aren't numbers
-- `has no value in --bva/--ep files`: a value file lacks a spec partition; pass both files, or `--spec` alone
-- `is valid in one ... and invalid in the other`: edited `--bva`/`--ep` files disagree
+- `formula ...: unknown name`, `unexpected`, `ends too early`, `field x is not an identifier`, `x is "abc", not a number`: fix the `=` formula (names are field names of letters, digits and `_`, not starting with a digit, and any formula containing a non-identifier field name fails even as part of `data-b` for `a-b`; only `round`, `floor`, `ceil`, `min`, `max` exist; valid values must be numbers)
+- `has no value in --bva/--ep files` or `is valid in one ... and invalid in the other`: pass both value files with matching validity for every spec partition, or `--spec` alone
 - `exceed the 1000000 budget`: too many t-tuples; lower the strength or reduce values (fewer partitions, or split the spec)
-
-## Checking the tool itself
-
-`npm test` runs the self-check after any change to `src/`. `npm run format` applies the Google TypeScript style (prettier), and `npm run typecheck` runs `tsc`.

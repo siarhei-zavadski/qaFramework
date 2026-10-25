@@ -27,6 +27,19 @@ Open the repo in Cursor or any agent that reads `AGENTS.md`.
   vs head, transcript claims, and a `change-judge` verdict; runs the repo's
   code only if you agree)
 
+## What to give the agent
+
+The requirement alone works. Each of these lets the model reach more failure
+domains:
+
+- related requirements that set the same values;
+- the code or config under test and its existing tests (for `--verify`);
+- one hop out: what writes the inputs and what reads the outputs (schemas,
+  migrations, API contracts, config layers);
+- one real sample record or log line, with secrets and personal data removed.
+
+Anything missing becomes an open question, never an invented value.
+
 The agent follows `AGENTS.md` and the `generating-test-cases` skill: it
 gathers the requirement's context in `generated/<feature>/context.md`, writes
 `generated/<feature>/spec.json`, runs the CLI, and has `test-spec-reviewer`
