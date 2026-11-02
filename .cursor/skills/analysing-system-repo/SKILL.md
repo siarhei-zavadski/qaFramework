@@ -62,7 +62,7 @@ Start one `test-case-designer` per component with the whole component section as
 5. **Computed values** (availability, capacity, traffic share) are `=` formulas; threshold outcomes are literal rules.
 6. **Shared negative sets**: injection strings, malformed names, oversized inputs in `invalid`, one fault per case (string length limits: skill step 2).
 
-The engine limits are the skill's: one label per field in `when` ("A or B" is two rules or a set partition), no comparison, `pow` or `mod`, no time or sequences.
+The engine limits are the skill's: `when` is per-field equality (a label or a list of labels for "A or B"), no comparison, `pow` or `mod`, no time or sequences.
 
 ### 4. Review
 

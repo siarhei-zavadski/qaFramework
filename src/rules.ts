@@ -14,11 +14,11 @@ type Domains = Record<string, Value[]>;
  */
 function ruleMatch(spec: Spec, rule: Rule, row: Row): boolean | undefined {
   let decided = true;
-  for (const [name, label] of Object.entries(rule.when)) {
+  for (const [name, labels] of Object.entries(rule.when)) {
     const field = spec.fields.find(f => f.name === name);
     const partition = field && partitionOf(field, row[name]);
     if (!partition?.valid) decided = false;
-    else if (partition.label !== label) return false;
+    else if (!labels.includes(partition.label)) return false;
   }
   return decided || undefined;
 }
@@ -59,12 +59,21 @@ export function uncoveredRules(spec: Spec, rows: Row[]): Rule[] {
   return spec.rules.filter(rule => !hit.has(rule));
 }
 
-/** First value in the domain of each partition of a field. */
-function partitionSamples(spec: Spec, domains: Domains, name: string): Value[] {
+/**
+ * First value in the domain of each partition of a field, limited to
+ * `labels` when given.
+ */
+function partitionSamples(
+  spec: Spec,
+  domains: Domains,
+  name: string,
+  labels?: string[],
+): Value[] {
   const field = spec.fields.find(f => f.name === name);
   const byLabel = new Map<string | undefined, Value>();
   for (const value of domains[name]) {
     const label = field && partitionOf(field, value)?.label;
+    if (labels && (label === undefined || !labels.includes(label))) continue;
     if (!byLabel.has(label)) byLabel.set(label, value);
   }
   return [...byLabel.values()];
@@ -72,14 +81,16 @@ function partitionSamples(spec: Spec, domains: Domains, name: string): Value[] {
 
 /**
  * Returns `row` when no rule before `rule` matches it; otherwise a copy whose
- * fields that only earlier rules mention are reassigned so none matches, or
- * undefined when no assignment does.
+ * fields that only earlier rules mention, or that `rule` allows several
+ * labels for (except `fixed`), are reassigned so none matches, or undefined
+ * when no assignment does.
  */
 function escapeEarlierRules(
   spec: Spec,
   domains: Domains,
   rule: Rule,
   row: Row,
+  fixed?: string,
 ): Row | undefined {
   // ponytail: exhaustive search over one sample per partition of the fields
   // earlier rules mention, run per rule and per captured moved row;
@@ -90,12 +101,21 @@ function escapeEarlierRules(
     earlier.some(earlierRule => matches(spec, earlierRule, target));
   if (!captured(row)) return row;
   const free = [...new Set(earlier.flatMap(r => Object.keys(r.when)))].filter(
-    name => !(name in rule.when) && name in domains,
+    name =>
+      name in domains &&
+      name !== fixed &&
+      (!(name in rule.when) || rule.when[name].length > 1),
   );
   const candidate = {...row};
   const search = (depth: number): boolean => {
     if (depth === free.length) return !captured(candidate);
-    for (const value of partitionSamples(spec, domains, free[depth])) {
+    const name = free[depth];
+    for (const value of partitionSamples(
+      spec,
+      domains,
+      name,
+      rule.when[name],
+    )) {
       candidate[free[depth]] = value;
       if (search(depth + 1)) return true;
     }
@@ -118,14 +138,15 @@ function rowForRule(spec: Spec, domains: Domains, rule: Rule): Row {
   }
   const row: Row = {};
   for (const [name, values] of Object.entries(domains)) {
-    const label = rule.when[name];
+    const labels = rule.when[name];
     const field = spec.fields.find(f => f.name === name);
-    const fit = values.find(
-      v => !label || (field && partitionOf(field, v)?.label === label),
-    );
+    const fit = values.find(v => {
+      const label = field && partitionOf(field, v)?.label;
+      return !labels || (label !== undefined && labels.includes(label));
+    });
     if (fit === undefined) {
       throw new Error(
-        `rule ${index + 1}: no generated value for ${name}=${label}`,
+        `rule ${index + 1}: no generated value for ${name}=${labels.join('|')}`,
       );
     }
     row[name] = fit;
@@ -163,7 +184,7 @@ export function rowsForRules(spec: Spec, domains: Domains, rows: Row[]): Row[] {
     for (const name of Object.keys(rule.when)) {
       for (const value of domains[name]) {
         const moved = {...base, [name]: value};
-        add(escapeEarlierRules(spec, domains, rule, moved) ?? moved);
+        add(escapeEarlierRules(spec, domains, rule, moved, name) ?? moved);
       }
     }
   }

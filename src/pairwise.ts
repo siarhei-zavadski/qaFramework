@@ -5,14 +5,17 @@
  */
 
 import {parseArgs} from 'node:util';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {analyzeBoundaries} from './bva.ts';
 import {analyzePartitions} from './ep.ts';
-import {outcomeOf, rowsForRules, uncoveredRules} from './rules.ts';
+import {matchRule, outcomeOf, rowsForRules, uncoveredRules} from './rules.ts';
 import {
   inputOptions,
   isRecord,
   isValue,
   loadSpec,
+  partitionOf,
   parseResult,
   readJson,
   run,
@@ -310,11 +313,56 @@ function printReport(
   console.error(lines.join('\n'));
 }
 
-/** The row every negative case starts from: each field's first valid value. */
-function baseRow(domains: Domains): Row {
+/**
+ * The row every negative case starts from: each field's first value in its
+ * first declared valid partition (ranges are sorted, so not values[0]).
+ */
+function baseRow(domains: Domains, spec?: Spec): Row {
   const base: Row = {};
-  for (const [name, values] of Object.entries(domains)) base[name] = values[0];
+  for (const [name, values] of Object.entries(domains)) {
+    const field = spec?.fields.find(f => f.name === name);
+    base[name] =
+      (field &&
+        values.find(v => partitionOf(field, v)?.label === field.firstValid)) ??
+      values[0];
+  }
   return base;
+}
+
+/**
+ * Warnings for a spec whose rules hide part of the model: a negative base row
+ * that a rule other than the last decides (it may mask every negative), and a
+ * valid partition that no earlier rule names yet never reaches the last rule.
+ */
+export function maskWarnings(spec: Spec, rows: Row[], base?: Row): string[] {
+  const last = spec.rules.at(-1);
+  if (!last || spec.rules.length < 2) return [];
+  const warnings: string[] = [];
+  const baseRule = base && matchRule(spec, base);
+  if (base && baseRule !== last) {
+    const rule = baseRule ? spec.rules.indexOf(baseRule) + 1 : 'none';
+    warnings.push(
+      `warning: negative base row matches rule ${rule} (${baseRule?.expected}), not the last rule`,
+    );
+  }
+  const reaching = rows.filter(row => matchRule(spec, row) === last);
+  if (!reaching.length) return warnings;
+  for (const field of spec.fields) {
+    for (const p of field.partitions.filter(p => p.valid)) {
+      const named = spec.rules.some(
+        rule => rule !== last && rule.when[field.name]?.includes(p.label),
+      );
+      const reaches = reaching.some(
+        row => partitionOf(field, row[field.name])?.label === p.label,
+      );
+      if (!named && !reaches && reaching.some(row => field.name in row)) {
+        warnings.push(
+          `warning: ${field.name}=${p.label} never reaches the last rule (${last.expected})`,
+        );
+      }
+    }
+  }
+  return warnings;
 }
 
 /**
@@ -334,7 +382,7 @@ export function generateCases(
     ...outcomeOf(spec, input),
     input,
   }));
-  const base = baseRow(domains);
+  const base = baseRow(domains, spec);
   const negative = Object.entries(params).flatMap(([name, items]) =>
     items
       .filter(i => !i.valid)
@@ -389,7 +437,7 @@ function checkPartitionValues(spec: Spec, params: Params): void {
 }
 
 if (import.meta.main) {
-  run(() => {
+  run(async () => {
     const {values: flags} = parseArgs({
       options: {
         ...inputOptions,
@@ -398,6 +446,7 @@ if (import.meta.main) {
         verify: {type: 'string'},
         strength: {type: 'string'},
         debug: {type: 'boolean'},
+        adapter: {type: 'string'},
       },
     });
     const spec = flags.spec || flags.name ? loadSpec(flags) : undefined;
@@ -451,14 +500,54 @@ if (import.meta.main) {
     }
 
     const cases = generateCases(params, spec, strength);
+    const base = baseRow(domains, spec);
     if (flags.debug) {
       const rows = cases.filter(c => c.valid).map(c => c.input);
       printReport(report(domains, rows, strength), spec, rows);
-      const base = baseRow(domains);
       console.error(
         `negative base row: ${JSON.stringify(base)} (expected ${outcomeOf(spec, base).expected})`,
       );
+      const negatives = cases.some(c => !c.valid);
+      if (spec) {
+        for (const w of maskWarnings(
+          spec,
+          rows,
+          negatives ? base : undefined,
+        )) {
+          console.error(w);
+        }
+      }
     }
-    write(flags.out, {technique: `${strength}-wise`, strength, cases});
+    const technique = `${strength}-wise`;
+    write(flags.out, {technique, strength, cases});
+    if (flags.adapter) {
+      // ponytail: CLI only, never exposed through mcp.ts: this runs local JS.
+      const {toInput} = (await import(
+        pathToFileURL(resolve(flags.adapter)).href
+      )) as {toInput?: (row: Row) => unknown};
+      if (typeof toInput !== 'function') {
+        throw new Error(`${flags.adapter}: must export function toInput(row)`);
+      }
+      const adapt = (row: Row, id: string): Row => {
+        const out = toInput({...row});
+        if (!isRow(out)) throw new Error(`${id}: toInput must return a row`);
+        return out;
+      };
+      const adaptedBase = JSON.stringify(adapt(base, 'base row'));
+      const systemCases = cases.map(c => {
+        const input = adapt(c.input, c.id);
+        if (!c.valid && JSON.stringify(input) === adaptedBase) {
+          throw new Error(
+            `${c.id}: toInput maps the negative (${c.fault}) onto the base row, masking its fault`,
+          );
+        }
+        return {...c, input};
+      });
+      write(flags.out?.replace(/(\.json)?$/, '.system.json'), {
+        technique,
+        strength,
+        cases: systemCases,
+      });
+    }
   });
 }

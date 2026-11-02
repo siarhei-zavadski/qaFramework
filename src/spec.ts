@@ -33,12 +33,14 @@ export interface Field {
   step: number;
   /** Range partitions sorted low to high, then set partitions. */
   partitions: Partition[];
+  /** Label of the first valid partition as declared, which negatives start from. */
+  firstValid: string;
 }
 
 /** A decision-table column. The first rule whose `when` matches a row wins. */
 export interface Rule {
-  /** Field name to valid partition label; empty for the catch-all rule. */
-  when: Record<string, string>;
+  /** Field name to the valid partition labels it accepts; empty for the catch-all rule. */
+  when: Record<string, string[]>;
   /** Literal outcome, or `=` followed by a formula. */
   expected: string;
   formula?: Formula;
@@ -208,7 +210,9 @@ function rejectUnknownKeys(
 ): void {
   const unknown = Object.keys(raw).find(key => !known.includes(key));
   if (unknown !== undefined) {
-    throw new Error(`${where}: unknown key ${unknown}`);
+    throw new Error(
+      `${where}: unknown key ${unknown} (allowed: ${known.join(', ')})`,
+    );
   }
 }
 
@@ -394,7 +398,11 @@ function parseField(raw: unknown): Field {
     throw new Error(`${name}: partitions must be a non-empty array`);
   }
 
-  const field: Field = {name, type, step, partitions: []};
+  const firstValid = declared.find(p => p.valid)?.label;
+  if (firstValid === undefined) {
+    throw new Error(`${name}: needs at least one valid partition`);
+  }
+  const field: Field = {name, type, step, partitions: [], firstValid};
   const ranges = declared.filter(p => !p.values);
   const sets = declared.filter(p => p.values);
   const invalid = raw.invalid ?? info.defaultInvalid;
@@ -463,17 +471,25 @@ function parseRules(raw: unknown, fields: Field[]): Rule[] {
     rejectUnknownKeys(rule, ['when', 'expected'], where);
     const when = rule.when ?? {};
     if (!isRecord(when)) throw new Error(`${where}: when must be an object`);
-    const conditions: Record<string, string> = {};
-    for (const [name, label] of Object.entries(when)) {
-      const partition = fields
-        .find(f => f.name === name)
-        ?.partitions.find(p => p.label === label);
-      if (!partition?.valid) {
+    const conditions: Record<string, string[]> = {};
+    for (const [name, raw] of Object.entries(when)) {
+      const labels = Array.isArray(raw) ? raw : [raw];
+      if (!labels.length || new Set(labels).size !== labels.length) {
         throw new Error(
-          `${where}: ${name}=${String(label)} is not a valid partition`,
+          `${where}: ${name} needs a label or a non-empty list of distinct labels`,
         );
       }
-      conditions[name] = partition.label;
+      for (const label of labels) {
+        const partition = fields
+          .find(f => f.name === name)
+          ?.partitions.find(p => p.label === label);
+        if (!partition?.valid) {
+          throw new Error(
+            `${where}: ${name}=${String(label)} is not a valid partition`,
+          );
+        }
+      }
+      conditions[name] = labels;
     }
     const parsed: Rule = {when: conditions, expected: rule.expected};
     if (rule.expected.startsWith('=')) {
@@ -514,8 +530,8 @@ function unmatchedCombination(
   const search = (depth: number): string | undefined => {
     if (depth === mentioned.length) {
       const hit = rules.some(rule =>
-        Object.entries(rule.when).every(
-          ([name, label]) => combination[name] === label,
+        Object.entries(rule.when).every(([name, labels]) =>
+          labels.includes(combination[name]),
         ),
       );
       if (hit) return undefined;
@@ -630,11 +646,11 @@ export function write(out: string | undefined, data: unknown): void {
 }
 
 /** Runs a CLI entry point, printing errors as `error: <message>`. */
-export function run(main: () => void): void {
-  try {
-    main();
-  } catch (e) {
-    console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
-    process.exit(1);
-  }
+export function run(main: () => void | Promise<void>): void {
+  Promise.resolve()
+    .then(main)
+    .catch((e: unknown) => {
+      console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
+      process.exit(1);
+    });
 }

@@ -4,18 +4,22 @@
 
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {analyzeBoundaries, boundaryValues} from './bva.ts';
 import {analyzePartitions, partitionValues} from './ep.ts';
 import {
   coveringRows,
   generateCases,
+  maskWarnings,
   merge,
   report,
   validDomains,
   type Case,
 } from './pairwise.ts';
 import {parseFormula} from './formula.ts';
-import {rowsForRules, uncoveredRules} from './rules.ts';
+import {matchRule, rowsForRules, uncoveredRules} from './rules.ts';
 import {parseSpec, readJson, type Spec} from './spec.ts';
 
 process.chdir(`${import.meta.dirname}/..`);
@@ -185,7 +189,10 @@ for (const name of ['__proto__', 'constructor']) {
 // A misspelt key fails at every level instead of being ignored.
 const goodField = {name: 'x', type: 'number', min: 0};
 for (const [raw, message] of [
-  [{fields: [goodField], strenght: 3}, /spec: unknown key strenght/],
+  [
+    {fields: [goodField], strenght: 3},
+    /spec: unknown key strenght \(allowed: fields, rules, strength\)/,
+  ],
   [{fields: [{...goodField, autoinvalid: false}]}, /x: .* autoinvalid/],
   [
     {
@@ -527,6 +534,136 @@ assert.match(
   debug.stderr,
   /negative base row: \{"price":50,"weight":2\.5,"card":false\} \(expected 50\)/,
 );
+assert.doesNotMatch(debug.stderr, /warning/);
+
+// `when` takes a label list: it matches either label, escapes an earlier rule
+// through its other label, and still reports shadowing and gaps.
+const plans = (rules: object[]) =>
+  parseSpec({
+    fields: [
+      {name: 'plan', type: 'enum', values: ['basic', 'pro', 'free']},
+      {name: 'n', type: 'number', min: 0, max: 9, step: 1},
+    ],
+    rules,
+  });
+const anyPlan = plans([
+  {when: {plan: 'basic'}, expected: 'b'},
+  {when: {plan: ['basic', 'pro']}, expected: 'paid'},
+  {when: {}, expected: 'free'},
+]);
+assert.equal(matchRule(anyPlan, {plan: 'pro', n: 1})?.expected, 'paid');
+assert.equal(matchRule(anyPlan, {plan: 'free', n: 1})?.expected, 'free');
+const anyPlanCases = generateCases(valuesOf(anyPlan), anyPlan);
+assert.ok(
+  anyPlanCases.some(c => c.valid && c.expected === 'paid'),
+  'rule 2 escapes rule 1 through plan=pro',
+);
+const proShadowed = plans([
+  {when: {plan: ['basic', 'pro']}, expected: 'paid'},
+  {when: {plan: 'pro'}, expected: 'never'},
+  {when: {}, expected: 'free'},
+]);
+assert.throws(
+  () => generateCases(valuesOf(proShadowed), proShadowed),
+  /rule 2 \(never\) can never match/,
+);
+assert.throws(
+  () => plans([{when: {plan: ['basic', 'pro']}, expected: 'paid'}]),
+  /no rule matches .*plan=free/,
+);
+assert.throws(
+  () =>
+    plans([
+      {when: {plan: []}, expected: 'e'},
+      {when: {}, expected: 'f'},
+    ]),
+  /plan needs a label or a non-empty list/,
+);
+
+// Negatives start from the first declared valid partition, not the lowest.
+const highFirst = parseSpec({
+  fields: [
+    {
+      name: 'n',
+      type: 'number',
+      step: 1,
+      partitions: [
+        {label: 'high', min: 100, max: 200},
+        {label: 'low', min: 0, max: 99},
+      ],
+    },
+    {name: 'm', type: 'enum', values: ['a', 'b'], invalid: ['zz']},
+  ],
+});
+for (const c of generateCases(valuesOf(highFirst), highFirst)) {
+  if (!c.valid && c.fault?.startsWith('m:')) {
+    assert.ok(Number(c.input.n) >= 100, JSON.stringify(c.input));
+  }
+}
+
+// Masking warnings: a valid partition no earlier rule names that never
+// reaches the last rule, and a base row decided by another rule.
+const masked = parseSpec({
+  fields: [
+    {name: 'm', type: 'enum', values: ['a', 'b']},
+    {name: 'c', type: 'enum', values: ['x', 'y']},
+  ],
+  rules: [
+    {when: {m: 'a'}, expected: 'A'},
+    {when: {}, expected: 'D'},
+  ],
+});
+assert.deepEqual(
+  maskWarnings(
+    masked,
+    [
+      {m: 'a', c: 'x'},
+      {m: 'a', c: 'y'},
+      {m: 'b', c: 'x'},
+    ],
+    {m: 'a', c: 'x'},
+  ),
+  [
+    'warning: negative base row matches rule 1 (A), not the last rule',
+    'warning: c=y never reaches the last rule (D)',
+  ],
+);
+
+// --adapter writes <out>.system.json through toInput and refuses an adapter
+// that maps a negative onto the base row.
+const dir = mkdtempSync(join(tmpdir(), 'qaf-check-'));
+const adapterSpec = join(dir, 'spec.json');
+writeFileSync(
+  adapterSpec,
+  JSON.stringify({fields: [{name: 'n', type: 'number', min: 1, max: 9}]}),
+);
+writeFileSync(
+  join(dir, 'good.mjs'),
+  'export const toInput = row => ({qty: row.n});',
+);
+writeFileSync(join(dir, 'drop.mjs'), 'export const toInput = () => ({});');
+const adapted = (adapter: string) =>
+  cli(
+    'pairwise',
+    '--spec',
+    adapterSpec,
+    '--out',
+    join(dir, 'cases.json'),
+    '--adapter',
+    join(dir, adapter),
+  );
+const good = adapted('good.mjs');
+assert.equal(good.status, 0, good.stderr);
+const system = JSON.parse(readFileSync(join(dir, 'cases.system.json'), 'utf8'));
+assert.ok(system.cases.length > 0);
+assert.ok(
+  system.cases.every((c: Case) => 'qty' in c.input && !('n' in c.input)),
+);
+const drop = adapted('drop.mjs');
+assert.equal(drop.status, 1);
+assert.match(drop.stderr, /onto the base row, masking its fault/);
+rmSync(dir, {recursive: true});
+
 // --bva alone has no enum, set or invalid-type values, so it is refused.
 const bvaOnly = spawnSync(
   process.execPath,

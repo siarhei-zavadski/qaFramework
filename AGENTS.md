@@ -16,7 +16,7 @@ Output goes to the caller's `generated/` (gitignored, disposable); old files the
 | --- | --- |
 | `src/spec.ts` | Spec model, JSON validation, `FIELD_TYPES`, CLI helpers |
 | `src/bva.ts`, `src/ep.ts` | Value techniques (one CLI each) |
-| `src/pairwise.ts` | t-wise generation, negative cases, `--verify` |
+| `src/pairwise.ts` | t-wise generation, negative cases, `--verify`, `--adapter` (CLI only: imports local JS, never add it to `src/mcp.ts`) |
 | `src/rules.ts` | Decision-table outcomes and rule coverage |
 | `src/formula.ts` | `=` formulas (no eval) |
 | `src/mcp.ts` | Stdio MCP server (`bva`, `ep`, `pairwise`) |
