@@ -530,6 +530,8 @@ const debug = cli(
   'fixtures/price-calculation.spec.json',
   '--debug',
 );
+assert.match(debug.stderr, /positive cases: 62 \(lower bound 40\)/);
+assert.match(debug.stderr, /negative cases: 8/);
 assert.match(
   debug.stderr,
   /negative base row: \{"price":50,"weight":2\.5,"card":false\} \(expected 50\)/,
@@ -670,13 +672,15 @@ const adapted = (adapter: string) =>
     '--spec',
     adapterSpec,
     '--out',
-    join(dir, 'cases.json'),
+    join(dir, 'cases.mode.json'),
     '--adapter',
     join(dir, adapter),
   );
 const good = adapted('good.mjs');
 assert.equal(good.status, 0, good.stderr);
-const system = JSON.parse(readFileSync(join(dir, 'cases.system.json'), 'utf8'));
+const system = JSON.parse(
+  readFileSync(join(dir, 'cases.mode.system.json'), 'utf8'),
+);
 assert.ok(system.cases.length > 0);
 assert.ok(
   system.cases.every(
@@ -707,7 +711,7 @@ const verifyAdapter = cli(
   '--spec',
   adapterSpec,
   '--verify',
-  join(dir, 'cases.json'),
+  join(dir, 'cases.mode.json'),
   '--adapter',
   join(dir, 'good.mjs'),
 );
@@ -719,10 +723,10 @@ const noAdapter = cli(
   '--spec',
   adapterSpec,
   '--out',
-  join(dir, 'cases.json'),
+  join(dir, 'cases.mode.json'),
 );
 assert.equal(noAdapter.status, 0, noAdapter.stderr);
-assert.throws(() => readFileSync(join(dir, 'cases.system.json')));
+assert.throws(() => readFileSync(join(dir, 'cases.mode.system.json')));
 rmSync(dir, {recursive: true});
 
 // --bva alone has no enum, set or invalid-type values, so it is refused.

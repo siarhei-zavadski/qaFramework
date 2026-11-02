@@ -298,7 +298,7 @@ function printReport(
     keys.length ? keys.map(k => `\n  ${k}`).join('') : ' none';
   const lines = [
     `${strength}-tuples covered: ${totalTuples - uncovered.length}/${totalTuples}`,
-    `cases: ${newTuplesPerCase.length} (lower bound ${lowerBound})`,
+    `positive cases: ${newTuplesPerCase.length} (lower bound ${lowerBound})`,
     `new tuples per case: ${newTuplesPerCase.join(' ')}`,
     `uncovered:${list(uncovered)}`,
   ];
@@ -521,6 +521,7 @@ if (import.meta.main) {
     if (flags.debug) {
       const rows = cases.filter(c => c.valid).map(c => c.input);
       printReport(report(domains, rows, strength), spec, rows);
+      console.error(`negative cases: ${cases.length - rows.length}`);
       console.error(
         `negative base row: ${JSON.stringify(base)} (expected ${outcomeOf(spec, base).expected})`,
       );

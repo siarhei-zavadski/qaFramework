@@ -32,7 +32,7 @@ Read the requirement fully. Add to `context.md`:
 - **One hop out** (repo in scope; at `<base>` when validating a change), each with `file:line`: what writes each input (caller, producer, config layer, persisted or browser state), how it encodes failures, sentinels (`0`, `null`, empty) peers read as unset; what reads each output (column type and scale, client number precision, other readers, alerts on its log level); and when a reader or UI hides an action for a state, whether the path performing it checks that state too.
 - **Without sources**, each one-hop item the model needs is an open question or `outside the model`, never invented; generate from the requirement. A sample record gets secrets and personal data replaced by `<redacted:kind>` and stays under `generated/`.
 - **Trust boundary** per input: crosses an untrusted boundary (UI, public HTTP or CLI, raw file) or is constrained by the caller's types or a validated schema (cite it). Step 2 sets negatives from it.
-- **Modes**: inputs that matter in one mode only. One spec per mode when active inputs differ; else put the activating value first (negative base row, step 4) and list ignored combinations as gaps.
+- **Modes**: inputs that matter in one mode only. One spec per mode when active inputs differ, as `spec.<mode>.json` with `--out cases.<mode>.json` in the same folder; else put the activating value first (negative base row, step 4) and list ignored combinations as gaps.
 
 Then list **inputs** (every value read: fields, flags, settings, lengths), **conditions** (every threshold or category: "over 100", "members only") and **outcomes** (what changes between conditions). Pick techniques:
 
@@ -114,13 +114,13 @@ BVA and EP files are for review; pairwise derives values from `--spec`. If you e
 
 The report goes to stderr. Proceed only on `uncovered: none` (and `uncovered rules: none` with rules). A count a little above the lower bound is normal. `--strength N` overrides the spec. With rules ending in a catch-all, `--debug` warns when the negative base row isn't decided by the catch-all, or a valid partition no earlier rule names never reaches it (masked); fix the spec order or rules, or list it as a gap (without a catch-all no warning is printed, so check the `negative base row … (expected X)` line yourself).
 
-With an adapter, add `--adapter generated/<feature>/adapter.mjs` (CLI only, not MCP, needs `--out`): it writes `cases.system.json` next to `--out` and fails when `toInput` returns a non-JSON object (nested arrays and objects are fine) or maps a negative onto a valid row, hiding its fault.
+With an adapter, add `--adapter generated/<feature>/adapter.mjs` (CLI only, not MCP, needs `--out`): it writes `<out>.system.json` (`cases.<mode>.json` → `cases.<mode>.system.json`) and fails when `toInput` returns a non-JSON object (nested arrays and objects are fine) or maps a negative onto a valid row, hiding its fault.
 
 Output shapes (read `cases`; files are not arrays):
 
 - `bva.json`, `ep.json`: `{"technique", "fields": {"<name>": [{"label", "value", "valid", "partition"}]}}`
 - `cases.json`: `{"technique", "strength", "cases": [{"id", "valid", "expected", "formula"?, "input": {"<name>": value}, "fault"?}]}`. `expected` is the literal, the computed number (`formula` holds the text), `valid` without rules, or `invalid`; `fault` names a negative's invalid value.
-- `cases.system.json`, only with `--adapter`: the same cases with each `input` replaced by `toInput(input)`. Tests read it; MCP never runs the adapter, and `--verify` audits only suites in spec fields.
+- `<out>.system.json`, only with `--adapter`: the same cases with each `input` replaced by `toInput(input)`. Tests read it; MCP never runs the adapter, and `--verify` audits only suites in spec fields.
 
 Positive cases combine valid values only; `valid: true` means each value is valid alone, not that the combination exists. Each negative is the `negative base row` (printed by `--debug` with its outcome) with one value swapped for an invalid one. If the system rejects that row before checking the swapped value, every negative is masked: declare a partition reaching the validators first (every field, ranges included, starts at its first declared valid partition), or one spec per mode. Never hand-edit cases to combine invalid values.
 
@@ -134,7 +134,7 @@ Give the `test-spec-reviewer` subagent the requirement, `context.md` and the spe
 
 ### 6. Present the cases
 
-Summarise first, then a table from `cases.system.json` if present, else `cases.json`:
+Summarise first, then a table per spec from its `.system.json` if present, else its cases file:
 
 ```markdown
 Generated 70 cases for price-calculation: 62 positive (all 66 pairs, lower bound 40; all 7 rules at their boundaries) and 8 negative, one invalid value each. Rejection of invalid input is unspecified (open question).

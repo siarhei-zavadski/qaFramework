@@ -17,7 +17,7 @@ Return, in order:
 
 - One line: positive and negative counts, tuple and rule coverage.
 - The system model in a few lines, and what is outside it.
-- Paths: context, spec, cases, plus adapter and `cases.system.json` if any.
+- Paths: context, each spec and cases file, plus the adapter and each `.system.json` if any.
 - A cases table (ID, valid, inputs, expected, fault, plus a formula column from `formula` for `=` rules).
 - Requirement-to-spec mapping: each partition and rule with its source line and label (`requirement`, `configured`, `default`, `product default`, `assumption`), plus each relation or configuration field's adapter conversion.
 - Assumptions, open questions and gaps (what the CLI can't model, such as impossible positive rows).
