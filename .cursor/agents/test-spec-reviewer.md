@@ -90,14 +90,20 @@ Check the spec against the requirement line by line:
 - **Component context**: if the context is a `components.md` section, each
   of its documented failure modes is covered by a partition or rule, or
   listed as a gap. Values labelled `configured`, `default` or
-  `product default` appear as assumptions, not facts.
+  `product default` appear as assumptions, not facts. No `expected` in
+  `spec.json` comes from a comment, rule, test title or `implemented` code
+  branch when an invariant, intake check or peer code path disagrees;
+  `expected` follows the invariant and the `implemented` value is an open
+  question.
 - **Technique fit**: a condition between fields, a single state transition
   or a set of possible pairs follows the skill's "Conditions between
   fields": a relation field or a configuration enum, its adapter conversion
   quoted in the context and checked against the requirement, one fault per
   negative after the conversion, every relation an outcome depends on
   modelled or pinned, and each history value pinned by a rule naming its
-  event. Check that multi-item accumulation includes `step1Exact` and
+  event, and an offset stored against an anchor that a later event moves
+  has signed `under`, `exact`, `over` and away moves with `expected`
+  re-anchored to the new anchor. Check that multi-item accumulation includes `step1Exact` and
   `step1Plus` (with unequal item rates when `max`, `min` or tiers apply),
   two thresholds on one value use a configuration enum with the normal order
   first, and scale-sensitive decimals or integers past 2^53 use string set
