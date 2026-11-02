@@ -112,9 +112,9 @@ node src/pairwise.ts --spec generated/<feature>/spec.json --debug --out generate
 
 BVA and EP files are for review; pairwise derives values from `--spec`. If you edit the value files, pass both `--bva` and `--ep` plus `--spec` for rules, with a value for every partition (`--bva` alone lacks enum, set and `invalid` values; `--ep` alone drops BVA edges).
 
-The report goes to stderr. Proceed only on `uncovered: none` (and `uncovered rules: none` with rules). A count a little above the lower bound is normal. `--strength N` overrides the spec. With rules, `--debug` warns when the negative base row isn't decided by the last rule, or a valid partition no earlier rule names never reaches the last rule (masked); fix the spec order or rules, or list it as a gap.
+The report goes to stderr. Proceed only on `uncovered: none` (and `uncovered rules: none` with rules). A count a little above the lower bound is normal. `--strength N` overrides the spec. With rules ending in a catch-all, `--debug` warns when the negative base row isn't decided by the catch-all, or a valid partition no earlier rule names never reaches it (masked); fix the spec order or rules, or list it as a gap (without a catch-all no warning is printed, so check the `negative base row … (expected X)` line yourself).
 
-With an adapter, add `--adapter generated/<feature>/adapter.mjs` (CLI only, not MCP): it writes `cases.system.json` next to `--out` and fails when `toInput` returns a non-row or maps a negative onto the base row, hiding its fault.
+With an adapter, add `--adapter generated/<feature>/adapter.mjs` (CLI only, not MCP, needs `--out`): it writes `cases.system.json` next to `--out` and fails when `toInput` returns a non-JSON object (nested arrays and objects are fine) or maps a negative onto a valid row, hiding its fault.
 
 Output shapes (read `cases`; files are not arrays):
 

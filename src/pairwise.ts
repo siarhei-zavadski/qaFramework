@@ -4,6 +4,7 @@
  * cases carry exactly one invalid value each.
  */
 
+import {rmSync} from 'node:fs';
 import {parseArgs} from 'node:util';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -330,19 +331,22 @@ function baseRow(domains: Domains, spec?: Spec): Row {
 }
 
 /**
- * Warnings for a spec whose rules hide part of the model: a negative base row
- * that a rule other than the last decides (it may mask every negative), and a
- * valid partition that no earlier rule names yet never reaches the last rule.
+ * Warnings for a spec whose rules end in a catch-all and hide part of the
+ * model: a negative base row that another rule decides (it may mask every
+ * negative), and a valid partition that no earlier rule names yet never
+ * reaches the catch-all. A table without a catch-all gets none.
  */
 export function maskWarnings(spec: Spec, rows: Row[], base?: Row): string[] {
   const last = spec.rules.at(-1);
-  if (!last || spec.rules.length < 2) return [];
+  if (!last || spec.rules.length < 2 || Object.keys(last.when).length) {
+    return [];
+  }
   const warnings: string[] = [];
   const baseRule = base && matchRule(spec, base);
-  if (base && baseRule !== last) {
-    const rule = baseRule ? spec.rules.indexOf(baseRule) + 1 : 'none';
+  if (baseRule && baseRule !== last) {
+    const rule = spec.rules.indexOf(baseRule) + 1;
     warnings.push(
-      `warning: negative base row matches rule ${rule} (${baseRule?.expected}), not the last rule`,
+      `warning: negative base row matches rule ${rule} (${baseRule.expected}), not the catch-all`,
     );
   }
   const reaching = rows.filter(row => matchRule(spec, row) === last);
@@ -355,9 +359,9 @@ export function maskWarnings(spec: Spec, rows: Row[], base?: Row): string[] {
       const reaches = reaching.some(
         row => partitionOf(field, row[field.name])?.label === p.label,
       );
-      if (!named && !reaches && reaching.some(row => field.name in row)) {
+      if (!named && !reaches) {
         warnings.push(
-          `warning: ${field.name}=${p.label} never reaches the last rule (${last.expected})`,
+          `warning: ${field.name}=${p.label} never reaches the catch-all (${last.expected})`,
         );
       }
     }
@@ -401,6 +405,18 @@ export function generateCases(
 
 function isRow(x: unknown): x is Row {
   return isRecord(x) && Object.values(x).every(isValue);
+}
+
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return (
+    isRecord(x) && [Object.prototype, null].includes(Object.getPrototypeOf(x))
+  );
+}
+
+function isJson(x: unknown): boolean {
+  if (isValue(x)) return true;
+  if (Array.isArray(x)) return Array.from(x).every(isJson);
+  return isPlainObject(x) && Object.values(x).every(isJson);
 }
 
 function isCase(x: unknown): x is {valid?: unknown; input: Row} {
@@ -470,6 +486,7 @@ if (import.meta.main) {
     const domains = validDomains(params);
 
     if (flags.verify) {
+      if (flags.adapter) throw new Error('--verify does not take --adapter');
       const rows = parseSuite(readJson(flags.verify), flags.verify);
       const known = new Set(
         Object.entries(domains).flatMap(([name, values]) =>
@@ -519,35 +536,61 @@ if (import.meta.main) {
       }
     }
     const technique = `${strength}-wise`;
-    write(flags.out, {technique, strength, cases});
+    const systemOut = flags.out
+      ? flags.out.replace(/(\.json)?$/, '.system.json')
+      : undefined;
     if (flags.adapter) {
       // ponytail: CLI only, never exposed through mcp.ts: this runs local JS.
-      const {toInput} = (await import(
+      if (!systemOut) throw new Error('--adapter needs --out');
+      const mod: unknown = await import(
         pathToFileURL(resolve(flags.adapter)).href
-      )) as {toInput?: (row: Row) => unknown};
+      );
+      const toInput = isRecord(mod) ? mod.toInput : undefined;
       if (typeof toInput !== 'function') {
         throw new Error(`${flags.adapter}: must export function toInput(row)`);
       }
-      const adapt = (row: Row, id: string): Row => {
-        const out = toInput({...row});
-        if (!isRow(out)) throw new Error(`${id}: toInput must return a row`);
-        return out;
-      };
-      const adaptedBase = JSON.stringify(adapt(base, 'base row'));
-      const systemCases = cases.map(c => {
-        const input = adapt(c.input, c.id);
-        if (!c.valid && JSON.stringify(input) === adaptedBase) {
+      const adapt = (row: Row, id: string): Record<string, unknown> => {
+        try {
+          const out: unknown = toInput({...row});
+          if (!isPlainObject(out) || !isJson(out)) {
+            throw new Error('toInput must return a JSON object');
+          }
+          return out;
+        } catch (e) {
           throw new Error(
-            `${c.id}: toInput maps the negative (${c.fault}) onto the base row, masking its fault`,
+            `${id}: ${e instanceof Error ? e.message : String(e)}`,
           );
         }
-        return {...c, input};
-      });
-      write(flags.out?.replace(/(\.json)?$/, '.system.json'), {
+      };
+      const adaptedBase = JSON.stringify(adapt(base, 'base row'));
+      const systemCases = cases.map(c => ({
+        ...c,
+        input: adapt(c.input, c.id),
+      }));
+      const validInputs = new Map<string, string>([
+        ...systemCases
+          .filter(c => c.valid)
+          .map((c): [string, string] => [JSON.stringify(c.input), c.id]),
+        [adaptedBase, 'base row'],
+      ]);
+      for (const c of systemCases) {
+        const match = !c.valid
+          ? validInputs.get(JSON.stringify(c.input))
+          : undefined;
+        if (match) {
+          throw new Error(
+            `${c.id}: toInput maps the negative (${c.fault}) onto a valid row (${match}), masking its fault`,
+          );
+        }
+      }
+      write(systemOut, {
         technique,
         strength,
         cases: systemCases,
       });
+    } else if (systemOut) {
+      rmSync(systemOut, {force: true});
     }
+    write(flags.out, {technique, strength, cases});
   });
 }

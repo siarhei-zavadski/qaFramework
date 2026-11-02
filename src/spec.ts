@@ -448,9 +448,6 @@ function parseField(raw: unknown): Field {
       seenValues.add(key);
     }
   }
-  if (!field.partitions.some(p => p.valid)) {
-    throw new Error(`${name}: needs at least one valid partition`);
-  }
   return field;
 }
 
@@ -472,18 +469,16 @@ function parseRules(raw: unknown, fields: Field[]): Rule[] {
     const when = rule.when ?? {};
     if (!isRecord(when)) throw new Error(`${where}: when must be an object`);
     const conditions: Record<string, string[]> = {};
-    for (const [name, raw] of Object.entries(when)) {
-      const labels = Array.isArray(raw) ? raw : [raw];
+    for (const [name, value] of Object.entries(when)) {
+      const labels = Array.isArray(value) ? value : [value];
       if (!labels.length || new Set(labels).size !== labels.length) {
         throw new Error(
           `${where}: ${name} needs a label or a non-empty list of distinct labels`,
         );
       }
+      const field = fields.find(f => f.name === name);
       for (const label of labels) {
-        const partition = fields
-          .find(f => f.name === name)
-          ?.partitions.find(p => p.label === label);
-        if (!partition?.valid) {
+        if (!field?.partitions.find(p => p.label === label)?.valid) {
           throw new Error(
             `${where}: ${name}=${String(label)} is not a valid partition`,
           );
@@ -501,7 +496,8 @@ function parseRules(raw: unknown, fields: Field[]): Rule[] {
     }
     return parsed;
   });
-  if (Object.keys(rules[rules.length - 1].when).length) {
+  const last = rules.at(-1);
+  if (last && Object.keys(last.when).length) {
     const gap = unmatchedCombination(rules, fields);
     if (gap) {
       throw new Error(

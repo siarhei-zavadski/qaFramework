@@ -10,10 +10,17 @@ import {isAbsolute, resolve} from 'node:path';
 import {createInterface} from 'node:readline';
 import {inputOptions, isRecord} from './spec.ts';
 
+interface InputSchema {
+  type: 'object';
+  properties: Record<string, object>;
+  required: string[];
+  additionalProperties: false;
+}
+
 interface Tool {
   name: string;
   description: string;
-  inputSchema: object;
+  inputSchema: InputSchema;
 }
 
 interface ToolResult {
@@ -51,7 +58,7 @@ const FLAGS: Record<string, string> = {
   debug: 'Append the coverage report.',
 };
 
-function schema(flags: string[]): object {
+function schema(flags: string[]): InputSchema {
   const properties: Record<string, object> = {
     cwd: {
       type: 'string',
@@ -129,6 +136,12 @@ function callTool(params: Record<string, unknown>): ToolResult {
   const {cwd, ...flags} = isRecord(params.arguments) ? params.arguments : {};
   if (typeof cwd !== 'string' || !isAbsolute(cwd) || !existsSync(cwd)) {
     return textResult('error: cwd must be an existing absolute path', true);
+  }
+  const unknown = Object.keys(flags).find(
+    f => !Object.hasOwn(tool.inputSchema.properties, f),
+  );
+  if (unknown !== undefined) {
+    return textResult(`error: unknown argument ${unknown}`, true);
   }
   // ponytail: one node process per call (~50 ms) keeps the CLI's exit codes
   // and messages; import the modules directly if latency ever matters.

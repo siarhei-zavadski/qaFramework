@@ -602,7 +602,7 @@ for (const c of generateCases(valuesOf(highFirst), highFirst)) {
 }
 
 // Masking warnings: a valid partition no earlier rule names that never
-// reaches the last rule, and a base row decided by another rule.
+// reaches the catch-all, and a base row decided by another rule.
 const masked = parseSpec({
   fields: [
     {name: 'm', type: 'enum', values: ['a', 'b']},
@@ -624,13 +624,19 @@ assert.deepEqual(
     {m: 'a', c: 'x'},
   ),
   [
-    'warning: negative base row matches rule 1 (A), not the last rule',
-    'warning: c=y never reaches the last rule (D)',
+    'warning: negative base row matches rule 1 (A), not the catch-all',
+    'warning: c=y never reaches the catch-all (D)',
   ],
 );
+// A complete table has no catch-all, so its last rule is no reference.
+assert.deepEqual(
+  maskWarnings(complete, [{plan: 'basic'}], {plan: 'basic'}),
+  [],
+);
 
-// --adapter writes <out>.system.json through toInput and refuses an adapter
-// that maps a negative onto the base row.
+// --adapter writes <out>.system.json through toInput, nested values included,
+// and refuses a non-JSON object or an adapter that maps a negative onto a
+// valid row (base row or another positive row).
 const dir = mkdtempSync(join(tmpdir(), 'qaf-check-'));
 const adapterSpec = join(dir, 'spec.json');
 writeFileSync(
@@ -639,9 +645,25 @@ writeFileSync(
 );
 writeFileSync(
   join(dir, 'good.mjs'),
-  'export const toInput = row => ({qty: row.n});',
+  'export const toInput = row => ({qty: row.n, events: [{qty: row.n}]});',
 );
 writeFileSync(join(dir, 'drop.mjs'), 'export const toInput = () => ({});');
+writeFileSync(
+  join(dir, 'clamp.mjs'),
+  'export const toInput = row => ({qty: typeof row.n === "number" ? Math.min(9, Math.max(1, row.n)) : row.n});',
+);
+writeFileSync(
+  join(dir, 'nan.mjs'),
+  'export const toInput = () => ({qty: 1, events: [{qty: NaN}]});',
+);
+writeFileSync(
+  join(dir, 'map.mjs'),
+  'export const toInput = () => ({qty: new Map()});',
+);
+writeFileSync(
+  join(dir, 'boom.mjs'),
+  'export const toInput = row => { if (row.n === 9) throw new Error("bad 9"); return {qty: row.n}; };',
+);
 const adapted = (adapter: string) =>
   cli(
     'pairwise',
@@ -657,11 +679,50 @@ assert.equal(good.status, 0, good.stderr);
 const system = JSON.parse(readFileSync(join(dir, 'cases.system.json'), 'utf8'));
 assert.ok(system.cases.length > 0);
 assert.ok(
-  system.cases.every((c: Case) => 'qty' in c.input && !('n' in c.input)),
+  system.cases.every(
+    (c: {input: Record<string, unknown>}) =>
+      'qty' in c.input && !('n' in c.input),
+  ),
 );
+assert.deepEqual(system.cases[0].input.events, [
+  {qty: system.cases[0].input.qty},
+]);
 const drop = adapted('drop.mjs');
 assert.equal(drop.status, 1);
-assert.match(drop.stderr, /onto the base row, masking its fault/);
+assert.match(drop.stderr, /onto a valid row \(base row\), masking its fault/);
+const clamp = adapted('clamp.mjs');
+assert.equal(clamp.status, 1);
+assert.match(clamp.stderr, /onto a valid row \(TC-00\d\), masking its fault/);
+const nan = adapted('nan.mjs');
+assert.equal(nan.status, 1);
+assert.match(nan.stderr, /toInput must return a JSON object/);
+const mapOut = adapted('map.mjs');
+assert.equal(mapOut.status, 1);
+assert.match(mapOut.stderr, /toInput must return a JSON object/);
+const boom = adapted('boom.mjs');
+assert.equal(boom.status, 1);
+assert.match(boom.stderr, /TC-00\d: bad 9/);
+const verifyAdapter = cli(
+  'pairwise',
+  '--spec',
+  adapterSpec,
+  '--verify',
+  join(dir, 'cases.json'),
+  '--adapter',
+  join(dir, 'good.mjs'),
+);
+assert.equal(verifyAdapter.status, 1);
+assert.match(verifyAdapter.stderr, /--verify does not take --adapter/);
+// Re-running without --adapter removes a stale <out>.system.json.
+const noAdapter = cli(
+  'pairwise',
+  '--spec',
+  adapterSpec,
+  '--out',
+  join(dir, 'cases.json'),
+);
+assert.equal(noAdapter.status, 0, noAdapter.stderr);
+assert.throws(() => readFileSync(join(dir, 'cases.system.json')));
 rmSync(dir, {recursive: true});
 
 // --bva alone has no enum, set or invalid-type values, so it is refused.
@@ -700,9 +761,14 @@ const mcp = spawnSync(process.execPath, ['src/mcp.ts'], {
       max: 1024 * 1024,
       debug: true,
     }),
+    pairwiseCall(6, {
+      cwd: process.cwd(),
+      spec: 'spec.example.json',
+      adapter: 'x.mjs',
+    }),
   ].join('\n'),
 });
-const [init, list, call, noCwd, big] = mcp.stdout
+const [init, list, call, noCwd, big, mcpAdapter] = mcp.stdout
   .trim()
   .split('\n')
   .map(line => JSON.parse(line));
@@ -714,6 +780,8 @@ assert.deepEqual(
 assert.equal(call.result.isError, false, call.result.content[0].text);
 assert.match(call.result.content[0].text, /"cases"/);
 assert.equal(noCwd.result.isError, true);
+assert.equal(mcpAdapter.result.isError, true);
+assert.match(mcpAdapter.result.content[0].text, /unknown argument adapter/);
 // Cases on stdout and the debug report on stderr each pass spawnSync's default
 // 1 MiB buffer; each is cut to 100k, only the stdout cut hints at `out`
 // (which redirects stdout alone), and the two are joined by '\n'.
