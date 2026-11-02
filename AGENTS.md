@@ -1,102 +1,42 @@
 # qaFramework
 
-A zero-dependency TypeScript CLI (Node 26 runs `.ts` directly, no build) that
-turns a requirement into test cases with BVA, EP, pairwise/t-wise and
-decision-table rules.
+A zero-dependency TypeScript CLI (Node 26 runs `.ts` directly, no build) that turns a requirement into test cases with BVA, EP, pairwise/t-wise and decision-table rules.
 
-## Test design requests
+## Routing
 
-When the user asks to design, generate or review test cases or test data for
-a requirement (text, URL, ticket), follow the `generating-test-cases` skill
-(`.cursor/skills/generating-test-cases/SKILL.md`). Don't hand-write cases or
-invent a spec format; model the requirement as a spec and run the CLI.
-Start from the skill's step 0: model what the system is for, its invariants
-and failure domains before fields, and keep only partitions and cases that
-trace to them. Coverage figures describe the spec, not the system.
+- **Design, generate or review test cases or test data** for a requirement (text, URL, ticket): follow `.cursor/skills/generating-test-cases/SKILL.md` from step 0. Never hand-write cases or invent a spec format. One `test-case-designer` subagent per requirement when there are several; run `test-spec-reviewer` before presenting cases.
+- **A local repo path, tests for that system or its infrastructure**: `.cursor/skills/analysing-system-repo/SKILL.md`.
+- **Validate, gate or score an agent-written change** (diff, branch, PR), or test selection, mutation testing, prompt flakiness, trajectory checks: `.cursor/skills/validating-agent-changes/SKILL.md` (runs target code only with consent, ends with `change-judge`).
 
-- Delegate one requirement per `test-case-designer` subagent when there are
-  several. Before presenting cases, run the `test-spec-reviewer` subagent on
-  the spec; if you are yourself a subagent (or subagents are unavailable),
-  walk its checklist in `.cursor/agents/test-spec-reviewer.md` instead.
-- Output goes to `generated/<feature>/` (gitignored, disposable): the
-  context, the spec and the cases. Old files there may use outdated formats;
-  never copy them as examples.
-- This repo is project-agnostic. Never write an analysed system's names,
-  hosts, tickets, config or tech notes into tracked files; all task and
-  system context lives under `generated/` in the caller's `cwd`.
-- The reference spec is `fixtures/price-calculation.spec.json` (bands, open
-  ranges, booleans, rules).
-
-When the user gives a local repo path and asks for tests of that system or
-its infrastructure, follow the `analysing-system-repo` skill
-(`.cursor/skills/analysing-system-repo/SKILL.md`). It writes the inventory,
-the documented failure modes and the configured values to the disposable
-`generated/<project>/components.md`.
-
-When the user asks to validate, gate or score a change an agent wrote (a
-diff, branch or PR), or for test selection, mutation testing, prompt
-flakiness or trajectory checks, follow the `validating-agent-changes` skill
-(`.cursor/skills/validating-agent-changes/SKILL.md`). It runs the target
-repo's code only with the user's consent, in disposable copies under
-`generated/<change>/`, and ends with the read-only `change-judge` verdict.
+Output goes to the caller's `generated/` (gitignored, disposable); old files there may use outdated formats, never copy them. The repo is project-agnostic: never write an analysed system's names, hosts, tickets, config or notes into tracked files. Reference spec: `fixtures/price-calculation.spec.json`.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `src/spec.ts` | Spec model, JSON validation, `FIELD_TYPES` table, CLI helpers |
+| `src/spec.ts` | Spec model, JSON validation, `FIELD_TYPES`, CLI helpers |
 | `src/bva.ts`, `src/ep.ts` | Value techniques (one CLI each) |
-| `src/pairwise.ts` | t-wise generation, negative cases, `--verify` audit |
+| `src/pairwise.ts` | t-wise generation, negative cases, `--verify` |
 | `src/rules.ts` | Decision-table outcomes and rule coverage |
-| `src/formula.ts` | Computed rule outcomes (`=` formulas, no eval) |
-| `src/mcp.ts` | Stdio MCP server running the CLIs (`bva`, `ep`, `pairwise` tools) |
+| `src/formula.ts` | `=` formulas (no eval) |
+| `src/mcp.ts` | Stdio MCP server (`bva`, `ep`, `pairwise`) |
 | `src/check.ts` | Self-check (`npm test`) |
 | `fixtures/` | Tracked acceptance data (test-design.org exercises) |
-| `spec.example.json` | Minimal spec, used by the self-check |
-| `.cursor/skills/generating-test-cases/` | Test design workflow and spec format |
-| `.cursor/skills/analysing-system-repo/` | Repo inventory and per-component test design |
-| `.cursor/skills/validating-agent-changes/` | Gate for agent-written changes: oracle, diff gate, test selection, mutants, trajectory, flakiness |
-| `.cursor/agents/` | `test-case-designer`, `test-spec-reviewer` and `change-judge` subagents |
+| `spec.example.json` | Minimal spec for the self-check |
+| `.cursor/skills/`, `.cursor/agents/` | The three skills above; `test-case-designer`, `test-spec-reviewer`, `change-judge` |
 | `.cursor/rules/typescript-style.mdc` | Code style for `src/**/*.ts` |
-| `.cursor-plugin/plugin.json`, `mcp.json` | Cursor plugin manifest (skills, subagents, MCP server) |
+| `.cursor-plugin/plugin.json`, `mcp.json` | Cursor plugin manifest |
 
 ## Commands
 
-Run `npm run format`, then `npm test` (self-check), `npm run typecheck` and
-`npm run format:check`. All three must pass before a change is done.
+Run `npm run format`, then `npm test`, `npm run typecheck` and `npm run format:check`; all three must pass before a change is done.
 
 ## Known limits
 
-Not supported natively: conditions that combine fields, single state
-transitions and constraints that exclude impossible combinations (model them
-as a relation field or a configuration enum with an adapter, skill step 2),
-and dates (map them to numbers). Not supported at all: generated sequences
-of events (an expected trace would need a second implementation of the
-system), timing and races. Say so and list them as gaps instead of inventing
-partitions on the original fields.
+Modelling limits (relations, state, formulas, string lengths, negative masking) are in the `generating-test-cases` skill. Beyond them:
 
-- Formulas have no power, comparison or string functions, and results keep
-  12 significant digits: `round(x, 0.01)` drops the cents of
-  10,000,000,000.01, and a computed result that falls short of a half step
-  by less than the 12th digit still rounds up (4,744 of 5,315,415,000
-  annuity rows).
-- Regulated use: cases carry no requirement IDs (trace them through the
-  designer's requirement-to-spec mapping), and the tool is not qualified or
-  validated for any standard.
-- `valid: true` on a case means each value is valid on its own, not that the
-  combination is possible; list impossible positive rows as gaps.
-- A string field with `minLength`/`maxLength` can't hold a string as an
-  `invalid` or set value, and its generated values are `x` repeated. Put
-  format and injection classes on a separate string field, or a spec, without
-  lengths.
-- Every negative case is one base row with one value swapped (`--debug`
-  prints the row and its outcome). If that row is rejected for another
-  reason, every negative is masked: put the value that reaches the validators
-  first in an enum's `values` or set partitions (a range field always starts
-  from its lowest valid range), or use one spec per mode.
-- At most 1,000,000 t-tuples; past that the CLI fails fast. 20 fields of 10
-  values take about 1 s at strength 2 and exceed the budget at strength 3;
-  strength 3 at about 455,000 tuples takes 40 to 50 s.
-- A huge `maxLength` (1048576) yields megabytes of JSON: pass `out`. MCP
-  stdout and stderr each stop at 100,000 characters, and a run over 120 s is
-  killed.
+- Not supported at all: generated event sequences (an expected trace needs a second implementation), timing and races; list them as gaps.
+- 12 significant digits: a result short of a half step by less than the 12th digit still rounds up (4,744 of 5,315,415,000 annuity rows).
+- Regulated use: cases carry no requirement IDs (trace via the designer's requirement-to-spec mapping); the tool is not qualified or validated for any standard.
+- At most 1,000,000 t-tuples (fails fast). 20 fields of 10 values: about 1 s at strength 2, over budget at 3; strength 3 at about 455,000 tuples takes 40 to 50 s.
+- A huge `maxLength` (1048576) yields megabytes of JSON: pass `out`. MCP stdout and stderr each stop at 100,000 characters; runs over 120 s are killed.

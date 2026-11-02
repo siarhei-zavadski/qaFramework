@@ -5,127 +5,102 @@ description: Designs test cases from any requirement with this repo's CLI (src/b
 
 # Generating test cases with the qaFramework CLI
 
-In the qaFramework repo (`src/pairwise.ts` exists), run the commands below from the repo root; Node 26 runs the `.ts` files directly. In any other project, call the `qa-framework` MCP tools `bva`, `ep` and `pairwise` instead: the arguments are the same flags without `--`, plus `cwd`, the absolute workspace root, for example `{"cwd": "/abs/project", "spec": "generated/x/spec.json", "debug": true, "out": "generated/x/cases.json"}`. The report and errors come back as text. The `pairwise` tool description gives the reference spec's absolute path, `<root>/fixtures/price-calculation.spec.json`; the other repo files named here (`.cursor/agents/...`) are under the same `<root>`.
+In the qaFramework repo (`src/pairwise.ts` exists), run the commands below from the repo root (Node 26 runs `.ts` directly). Elsewhere, call the `qa-framework` MCP tools `bva`, `ep`, `pairwise` with the same flags without `--`, plus `cwd` (absolute workspace root): `{"cwd": "/abs/project", "spec": "generated/x/spec.json", "debug": true, "out": "generated/x/cases.json"}`. Report and errors come back as text. The `pairwise` tool description gives `<root>/fixtures/price-calculation.spec.json`; other repo files named here (`.cursor/agents/...`) are under the same `<root>`.
 
-## Workflow
-
-Follow steps 0–6 in order.
+All output goes to `generated/<feature>/` (disposable). Follow steps 0–6 in order.
 
 ### 0. Model the system
 
-Coverage numbers measure the spec, not the system. Before any field or partition, think like the system's owner, not like a coverage tool, and write a short `## System model` section at the top of `generated/<feature>/context.md` (disposable). Stay at the level of behaviour; the requirement's wording and any examples here are illustrations, never a checklist.
+Coverage measures the spec, not the system. Think like the system's owner, not a coverage tool, and start `generated/<feature>/context.md` with `## System model`, at the level of behaviour (wording and examples here illustrate, they are not a checklist):
 
-- **Purpose**: what the system or change is for, and who relies on it.
-- **Actors and boundaries**: what interacts with it, and what it trusts.
-- **Invariants**: what must always or never hold, whatever the inputs.
-- **State and environment**: what behaviour depends on besides inputs (topology, configuration, history, timing, peers).
-- **Failure domains**: how it can fail or be abused, and what a user would notice.
-- **Oracles**: how a tester would know a result is right: every output field and side effect (stored records, emitted events, logs and alerts, rendered state) and the invariants between them (`reported == before - after`, nothing written on refusal); where none exists, that is an open question.
-- **Technique fit**: for each item, `input-domain` (the CLI models it) or `outside the model` (a gap, designed by hand or left to other test levels).
+- **Purpose**: what it is for, who relies on it.
+- **Actors and boundaries**: what interacts with it, what it trusts.
+- **Invariants**: what must always or never hold.
+- **State and environment**: what besides inputs matters (topology, configuration, history, timing, peers).
+- **Failure domains**: how it fails or is abused, what a user would notice.
+- **Oracles**: every output field and side effect (stored records, events, logs and alerts, rendered state) and invariants between them (`reported == before - after`, nothing written on refusal); none = open question.
+- **Technique fit**: per item, `input-domain` (the CLI models it) or `outside the model` (a gap: by hand or other test levels).
 
-Rules that follow:
+Every partition, rule and case traces to a requirement claim, invariant or failure domain; a nonsensical combination is dropped or listed as a gap, never generated for coverage. If most of the model is `outside the model`, say so first and model only the input-domain part. Report coverage as coverage of the model, with its gaps.
 
-- Every partition, rule and case traces to a requirement claim, an invariant or a failure domain. A combination that makes no sense for the system is dropped or listed as a gap, never generated to raise coverage.
-- If most of the system model is `outside the model`, say so first and model only the input-domain part; don't force the rest into partitions.
-- Report coverage as coverage of the model, with the model's gaps beside it.
+### 1. Gather context
 
-### 1. Classify the requirement and gather context
+Read the requirement fully. Add to `context.md`:
 
-Read the requirement fully. A ticket or PR usually changes an existing system, so before modelling write `generated/<feature>/context.md` (disposable) with:
+- **Requirement claims**: each rule, threshold and outcome, quoted.
+- **System context** (repo, schema or config in scope): unchanged contracts, OpenAPI/DB schemas, enums, config defaults behind the inputs, each with `file:line` and label `requirement`, `configured (confirm as requirement)` or `default (confirm as requirement)`. Never a placeholder value. Ignore code comments, docstrings, repo rules and test titles: behaviour found only in executable code is `implemented`, never `expected`; when an invariant, intake validator or peer code path disagrees with `implemented` code on a reachable input (even without requirement text), set `expected` in `spec.json` from the invariant, intake validator or peer path and list the conflicting `implemented` branch as an open question.
+- **One hop out** (repo in scope; at `<base>` when validating a change), each with `file:line`: what writes each input (caller, producer, config layer, persisted or browser state), how it encodes failures, sentinels (`0`, `null`, empty) peers read as unset; what reads each output (column type and scale, client number precision, other readers, alerts on its log level); and when a reader or UI hides an action for a state, whether the path performing it checks that state too.
+- **Without sources**, each one-hop item the model needs is an open question or `outside the model`, never invented; generate from the requirement. A sample record gets secrets and personal data replaced by `<redacted:kind>` and stays under `generated/`.
+- **Trust boundary** per input: crosses an untrusted boundary (UI, public HTTP or CLI, raw file) or is constrained by the caller's types or a validated schema (cite it). Step 2 sets negatives from it.
+- **Modes**: inputs that matter in one mode only. One spec per mode when active inputs differ; else put the activating value first (negative base row, step 4) and list ignored combinations as gaps.
 
-- **Requirement claims**: each rule, threshold and outcome the text states, quoted.
-- **System context**, when a repo, schema or config is in scope: the unchanged contracts, OpenAPI or DB schemas, enums and config defaults the inputs come from, each with `file:line` and a label: `requirement`, `configured (confirm as requirement)` or `default (confirm as requirement)`. Never invent a placeholder value. Ignore code comments, docstrings, repo rules and test titles: label behaviour found only in executable code `implemented`, never use it as `expected`, and when an invariant, intake check or peer code path disagrees with `implemented` code on a reachable input, set `expected` in `spec.json` from the invariant or intake check and list the `implemented` value as an open question.
-- **One hop out**, when a repo, schema or config is in scope (at `<base>` when validating a change): what writes each input (caller, producer, config layer, persisted or browser state), how it encodes failures, and sentinel values (`0`, `null`, empty) its peers read as unset; what reads each output (column type and scale, client number precision, other readers of the field, alerts on its log level); and, when a reader or UI hides an action for a state, whether the code path performing it checks that state too. Each with `file:line`.
-- **Without sources**, each one-hop item the model depends on is an open question or `outside the model`, never invented, and generation proceeds from the requirement. A sample record, when given, has secrets and personal data replaced by `<redacted:kind>` and stays under `generated/`.
-- **Trust boundary**: for each input, whether it crosses an untrusted boundary (UI, public HTTP or CLI, a raw file) or is already constrained by the caller's types or a validated schema (cite it). Step 2 sets the negatives from it.
-- **Modes**: inputs that only matter in one mode or event. Use one spec per mode when the active inputs differ; otherwise put the activating value first (see the negative base row in step 4) and list the ignored combinations as gaps.
-
-Then list:
-
-- **Inputs**: every value the system reads (fields, flags, settings, lengths).
-- **Conditions**: every threshold or category the text mentions ("over 100", "at least 5 kg", "members only").
-- **Outcomes**: what changes between conditions (price, message, accept/reject).
-
-Pick techniques from what you found:
+Then list **inputs** (every value read: fields, flags, settings, lengths), **conditions** (every threshold or category: "over 100", "members only") and **outcomes** (what changes between conditions). Pick techniques:
 
 | Requirement shape | Technique | Spec feature |
 | --- | --- | --- |
-| Input accepted or rejected by range, length or set | BVA + EP | `partitions` with `valid` |
-| Several inputs that interact | pairwise (`strength: 2`) | multiple fields |
+| Accepted or rejected by range, length or set | BVA + EP | `partitions` with `valid` |
+| Several interacting inputs | pairwise (`strength: 2`) | multiple fields |
 | A rule needs 3+ conditions at once | rule coverage, or `strength: 3` | `rules` |
-| Output is computed or chosen by conditions | decision table | `rules` with `expected` (`=` formulas for computed values) |
-| A condition combines fields (a difference, a ratio, one field compared to another) | a relation field and an adapter | step 2, conditions between fields |
-| One event in a state machine (a state, a counter, the history that matters) | decision table over reachable configurations | step 2, conditions between fields; sequences of events and timing are gaps, design them by hand |
+| Output computed or chosen by conditions | decision table | `rules` with `expected` (`=` for computed) |
+| Condition combines fields (difference, ratio, field vs field) | relation field + adapter | step 2, conditions between fields |
+| One event in a state machine (state, counter, history) | decision table over reachable configurations | step 2; sequences and timing are gaps, by hand |
 
-Anything the requirement leaves open (inclusive or exclusive bound, precision, upper limit, case sensitivity) is a question for the user, not a guess. If a contradiction or a missing definition blocks a meaningful model, ask before generating cases.
+Anything left open (bound inclusivity, precision, upper limit, case sensitivity) is a question for the user, not a guess. If a contradiction or missing definition blocks a meaningful model, ask before generating.
 
 ### 2. Model every input as partitions
 
-Write `generated/<feature>/spec.json`. A field is a list of partitions: equivalence classes that the requirement treats the same way.
+Write `generated/<feature>/spec.json`. A field is a list of partitions, equivalence classes the requirement treats alike:
 
 ```json
 {"name": "price", "type": "number", "step": 0.1, "partitions": [{"label": "low", "min": 0, "max": 100}, {"label": "mid", "min": 100.1, "max": 199.9}, {"label": "high", "min": 200}]}
 ```
 
-- **Types**: `number` ranges use `min`/`max`. `string` ranges use `minLength`/`maxLength`. `enum` has only value sets. Any type can have a set partition `{"label", "values": [...]}`.
-- **Bounds are inclusive.** Turn exclusive wording into a bound one step away: "exceeds 100" with step 0.1 becomes `min: 100.1`.
-- **A missing `min` or `max` means open-ended.** "200 or more" is `{"min": 200}`.
-- **`step`** is the smallest meaningful increment (1, 0.01 for money, 0.1 for kg). Bounds must be multiples of it.
-- **Gaps and outer sides are filled with invalid partitions automatically**, named `below`, `above` and `gap:<a>:<b>`. To make values outside a range valid, add a partition for them.
-- **Always test negatives, even when the requirement doesn't mention them.** Keep the auto-filled partitions and the default `invalid` values. If the requirement doesn't say how invalid input is handled, keep `expected: invalid` and list "rejection behaviour not specified" as an open question. Drop them only where step 1 shows the input can't take such values: a checkbox or fixed dropdown can't, so both may go; an internal input whose type the caller's types or a validated schema guarantee needs no wrong-type values (`"invalid": []`), nor does an input whose wrong-type values are set partitions with named rejection rules, and `"autoInvalid": false` also needs the range itself enforced upstream (schema `minimum`/`maximum`, an enum) or a relation field (conditions between fields, below). Cite the evidence in `context.md`.
-- **`valid: false`** marks a declared class as invalid, for example `{"label": "tooLong", "minLength": 65, "valid": false}`. Its cases only expect `invalid`; a rejection the requirement names (`rejected:too-long`, `declined`) is a valid partition with a literal rule.
-- **`invalid`** lists values of the wrong type or format. Defaults are `["abc", null]` for numbers, `[null]` for strings and `["__invalid__"]` for enums. Add domain-specific ones the requirement implies, such as an off-step amount (`0.015` at step 0.01). On a string with `minLength`/`maxLength`, every string falls in a length partition, so a string in `invalid` fails the spec and oversized input is already `above`; put format and injection strings on a separate string field or spec without lengths.
-- **Shorthand for simple fields**: `{"type": "number", "min": 18, "max": 65}` is one valid range, and `{"type": "enum", "values": ["PL", "DE"]}` is one partition per value, labelled with the value.
+- **Types**: `number` uses `min`/`max`, `string` uses `minLength`/`maxLength`, `enum` only value sets; any type may have a set partition `{"label", "values": [...]}`. Shorthand: `{"type": "number", "min": 18, "max": 65}` is one valid range; `{"type": "enum", "values": ["PL", "DE"]}` is one partition per value.
+- **Bounds are inclusive**: exclusive wording moves one step ("exceeds 100" at step 0.1 is `min: 100.1`). Missing `min`/`max` is open-ended. `step` is the smallest meaningful increment (1, 0.01 money, 0.1 kg); bounds are multiples of it.
+- **Auto invalid partitions** fill gaps and outer sides: `below`, `above`, `gap:<a>:<b>`. Add a partition to make such values valid.
+- **Always test negatives**, even if the requirement is silent: keep auto partitions and default `invalid` values; unspecified rejection keeps `expected: invalid` plus open question "rejection behaviour not specified". Drop them only where step 1 shows the input can't take such values, citing evidence in `context.md`: a checkbox or fixed dropdown drops both; a type guaranteed by the caller's types or a validated schema, or wrong-type values modelled as set partitions with named rejection rules, allows `"invalid": []`; `"autoInvalid": false` also needs the range enforced upstream (schema `minimum`/`maximum`, an enum) or a relation field.
+- **`valid: false`** marks a declared class invalid (`{"label": "tooLong", "minLength": 65, "valid": false}`); its cases expect only `invalid`. A rejection the requirement names (`rejected:too-long`, `declined`) is a valid partition with a literal rule.
+- **`invalid`** lists wrong-type or wrong-format values; defaults `["abc", null]` (number), `[null]` (string), `["__invalid__"]` (enum). Add domain ones the requirement implies (off-step `0.015` at step 0.01). A string with `minLength`/`maxLength` can't hold strings in `invalid` or set values (each falls in a length partition; generated values are `x` repeated, oversize is already `above`): put format and injection strings on a separate field or spec without lengths.
 
-How to model common wording:
+- **Wording**: bands and tiers are one range per band; a yes/no flag is an `enum` with `values: [true]` and `values: [false]`; alike values share a set partition (`{"label": "eu", "values": ["PL", "DE"]}`); format and checksum rules (email, IBAN) are set partitions on an `enum` or lengthless `string`, one value per format class, valid and invalid (checksum: a published valid sample and it with one character changed); dates are `number` in the rule's unit (an assumption); a quantity that can't be negative starts at `min: 0`; UI limits not in the text (HTML `min`/`max`) are an open question, not a bound.
 
-| Requirement says | Model |
-| --- | --- |
-| "between 18 and 65" | `min: 18, max: 65` |
-| "at least 5 kg" / "under 5 kg" | `{"label": "heavy", "min": 5}` and `{"label": "light", "min": 0, "max": 4.9}` |
-| tax bands, tiers, age groups | one range partition per band, in any order |
-| "1 to 64 characters" | `type: "string", minLength: 1, maxLength: 64` |
-| yes/no flag | `enum` with partitions `values: [true]` and `values: [false]` |
-| country, role, plan | `enum` values, or set partitions grouping values that behave the same (`{"label": "eu", "values": ["PL", "DE"]}`) |
-| format rules, checksums (email, IBAN) | set partitions on an `enum` or a `string` without lengths (length values are `x` repeated, so they fail any format), one representative value per format class, valid and invalid; for a checksum, a published valid sample and the same with one character changed |
-| dates, times | `number` in a unit the rule uses (days, minutes), and note the mapping as an assumption |
-| a quantity that can't be negative (age, count, years of service) | close the lowest partition at `min: 0` even if the text doesn't say so |
-| UI limits not in the requirement text (HTML `min`/`max`, placeholders) | not part of the model; list them as an open question |
+**Conditions between fields** (`checkOut - checkIn` 1 to 30 nights, `used / quota` at most 0.80) get no boundary from per-field values, and positive rows get wrong expected results. Replace one field of the condition with a relation field, and write `generated/<feature>/adapter.mjs` exporting `toInput(input)` that returns the system's input for one case (wrong-type values pass through); quote it in `context.md`.
 
-**Conditions between fields** (`checkOut - checkIn` from 1 to 30 nights, `used / quota` at most 0.80) get no boundary from values picked per field, and positive rows get wrong expected results. Replace one field of the condition by a relation field, and write an adapter, `generated/<feature>/adapter.mjs` exporting `toInput(input)` that returns the system's input for one case (wrong-type values pass through unchanged), and quote it in `context.md`; where another field holds a negative's fault, the adapter picks a replaced input that is valid by itself and against the faulty field, so the negative keeps one fault. If the kept value plus the relation leaves the replaced input's range on a positive row, the adapter moves the kept value down inside its own partition (`checkIn` 365 with 10 nights becomes 355), or a first rule expects `invalid`. Formulas run on the spec row before the adapter, so an `=` outcome can't read a named point or a value the adapter moves: give such rows literal outcomes per representative combination. Model every relation an outcome depends on, or pin its fields so it can't trigger. A condition over three or more range fields (`min <= amount <= max`) doesn't split into relation fields: pin all but one per spec (one spec per pinned configuration, another for the pinned fields' own relation), or list it as a gap.
-- **Difference**: when the replaced input lands exactly on its step, the relation field is a number, `nights` with `checkOut = checkIn + nights`; sign it the way a mode requires (`gap` is `limit - value` for one side, `value - limit` for the other).
-- **Ratio or product**: an enum of points that the adapter computes from the other fields, `usagePoint` with `zero`, `on` (`floor(0.8 * quota)`), `off` (`on + 1`) and `max`, since an exact 0.80 exists only for some quotas. Name the other fields in the `on` and `off` rules (`"quota": "valid"`) so each of their values meets both points. A point that can't exist for some combination gets a first rule expecting `invalid`.
-- **Outcomes of the relation** (`rejected:too-long`) are valid partitions with rules: leave its outer classes open-ended or set `"autoInvalid": false`, and declare only the band where the input is invalid (`{"label": "reversed", "max": -1, "valid": false}`). Put the replaced field's own invalid edges in `invalid` next to the defaults (`["abc", null, "checkOut=366"]`) as values the adapter writes through, and its valid edge as a set value when the relation never reaches it (`"checkOut=365"`).
-- **One event in a state machine**, or fields where only some pairs exist: one enum of reachable configurations (`CLOSED/0`, and `CLOSED/2 via fail, fail` when a defect needs accumulated history; the adapter replays it), the event, and amounts relative to the configuration (`under`, `exact`, `over` the threshold). One rule per history value names its event and amount, or pairwise may skip it. When a value is stored as an offset from an anchor and a later event moves the anchor, test the signed move toward the value at `under`, `exact` and `over` the offset, plus one move away, with `expected` in `spec.json` re-anchored to the new anchor so the intake checks still hold there.
-- **Collections**: when an outcome accumulates over items toward a cap, use 2+ items and adapter-computed points where the target equals the first item's contribution (`step1Exact`) and one step past it (`step1Plus`), like ratio points, with literal outcomes or harness-side invariants (formulas can't read them); with `max`, `min` or tiers over items, give items unequal rates so the dominant one switches inside a step.
-- **Two thresholds on one value** (trigger and target, a maximum and a peer's minimum) are a 3-field condition: model their order as a configuration enum (normal order first, so negatives aren't masked) and the value as named points relative to both; a crossing the system accepts is a valid partition with a rule, its intended handling an open question.
-- **Scoped overrides** (a default and per-key values): 2+ keys with a non-first one selected, a missing key, and a present key with an omitted or `null` optional field. A reachable path stays in the model whatever a comment says.
-- **Terminal states and passes**: an action owed when something finishes is crossed with every terminal state (`completed`, `partial+cancelled`, `expired`, `failed`); a unit that takes a prior result gets a named history value where an earlier pass changed the same item.
-- **Representation**: JSON numbers drop decimal scale (`3` vs `3.00`) and integers past 2^53, so model them as string set values the adapter passes through.
-- **Rejection order**: when two checks can reject one input, add a valid row where both hold and a rule naming the winning reason; one-fault negatives never show it.
+- **One fault per negative**: when another field holds the fault, the adapter picks a replaced input valid by itself and against the faulty field.
+- **Out of range on a positive row**: if the kept value plus the relation leaves the replaced input's range, the adapter moves the kept value inside its own partition (`checkIn` 365 + 10 nights becomes 355), or a first rule expects `invalid`.
+- **Formulas run on the spec row before the adapter**: `=` can't read a named point or a value the adapter moves; give such rows literal outcomes per representative combination.
+- Model every relation an outcome depends on, or pin its fields so it can't trigger. A condition over 3+ range fields (`min <= amount <= max`): pin all but one per spec (one spec per pinned configuration, another for the pinned fields' own relation), or a gap.
+- **Difference** landing on its step: a number relation field (`nights`, `checkOut = checkIn + nights`), signed per mode (`gap` is `limit - value` one side, `value - limit` the other; one accepting and one rejecting range already test `0` and `±step` via BVA without a third point partition).
+- **Ratio or product**: an enum of adapter-computed points, `usagePoint` with `zero`, `on` (`floor(0.8 * quota)`), `off` (`on + 1`), `max` (an exact 0.80 exists only for some quotas). Name the range field in one `on` rule and one `off` rule (`"quota": "valid"`, plus any accepting precondition so an earlier rejection rule doesn't capture it, without expanding across enum or unrelated fields) so its BVA edges meet both points. A point impossible for some combination gets a first rule expecting `invalid`.
+- **Outcomes of the relation** (`rejected:too-long`) are valid partitions with rules: outer classes open-ended or `"autoInvalid": false`, only the invalid band declared (`{"label": "reversed", "max": -1, "valid": false}`). The replaced field's own invalid edges go in `invalid` as write-through values (`["abc", null, "checkOut=366"]`), its valid edge as a set value when the relation never reaches it (`"checkOut=365"`).
+- **One event in a state machine**, or fields where only some pairs exist: one enum of reachable configurations (`CLOSED/0`; `CLOSED/2 via fail, fail` when a defect needs history, replayed by the adapter), the event, and amounts relative to the configuration (`under`, `exact`, `over` the threshold). One rule per history value names its event and amount, or pairwise may skip it.
+- **Offset from a moving anchor** (a price, limit or deadline stored as an offset from an initial anchor when a later fill, amend or tick moves that anchor): include a signed anchor-move field testing moves toward the stored value at `under`, `exact` and `over` the offset, plus one move away, with `expected` in `spec.json` re-anchored to the new anchor so the intake checks still hold there.
+- **Collections** accumulating toward a cap: 2+ items and adapter points where the target equals the first item's contribution (`step1Exact`) and one step past (`step1Plus`), with literal outcomes or harness-side invariants; with `max`, `min` or tiers over items, unequal item rates so the dominant one switches inside a step.
+- **Two thresholds on one value** (trigger and target, a maximum and a peer's minimum): a configuration enum of their order (normal first, so negatives aren't masked) and the value as named points relative to both; an accepted crossing is a valid partition with a rule, its intended handling an open question.
+- **Scoped overrides** (default plus per-key values): 2+ keys with a non-first selected, a missing key, a present key with an omitted or `null` optional field. A comment never removes a reachable path.
+- **Terminal states and passes**: an action owed on finish is crossed with every terminal state (`completed`, `partial+cancelled`, `expired`, `failed`); a unit taking a prior result gets a history value where an earlier pass changed the same item.
+- **Representation**: JSON drops decimal scale (`3` vs `3.00`) and integers past 2^53; model them as string set values the adapter passes through.
+- **Rejection order**: when two checks can reject one input, a valid row where both hold and a rule naming the winning reason (one-fault negatives never show it).
 
 ### 3. Model outcomes as rules
 
-When valid inputs lead to different results, add a decision table. The first matching rule wins:
+When valid inputs lead to different results, add a decision table; the first matching rule wins:
 
 ```json
 "rules": [
   {"when": {"price": "high", "card": "yes", "weight": "light"}, "expected": "=round(0.85 * price, 0.1)"},
   {"when": {"price": "high"}, "expected": "=round(0.9 * price, 0.1)"},
-  {"when": {"price": "low", "weight": "heavy"}, "expected": "=round(price + weight, 0.1)"},
   {"when": {}, "expected": "=round(price, 0.1)"}
 ]
 ```
 
-- `when` maps field names to valid partition labels. Put the most specific rule first.
-- End with the catch-all `{"when": {}}` for "otherwise". Without one, every combination of the valid partitions the rules mention must match a rule, or the CLI names the missing combination.
-- Every rule gets a matching case plus one case per value of each of its condition fields, BVA edges included, with the rule's other conditions held. That tests the boundaries inside multi-field rules (`>` vs `>=` in a 3-condition rule), which pairwise misses, without full 3-wise. If an earlier rule captures such a case, the fields outside the rule are re-chosen so no earlier rule matches it; if none works, the case stays as is.
-- `expected` is the outcome as stated: a literal (`"rejected"`, `"gold"`), or `=` and a formula that the CLI computes for each case; a fixed number is `"=19.99"`, since a bare `"19.99"` stays a string. Formulas use field names (letters, digits and `_`, not starting with a digit), numbers (`1.5`, `1e-5`), `+ - * / ( )`, a leading `-` or `+`, `min(...)`, `max(...)`, and `round(x, step)`, `floor(x, step)`, `ceil(x, step)`, which round to a multiple of `step` (`round` sends ties toward +infinity like JS `Math.round`, so `round(-2.5, 1)` is -2; `floor` down, `ceil` up). Results keep 12 significant digits, so `round(x, 0.01)` drops the cents of 10,000,000,000.01 and above. Include output rounding when the requirement defines it, or list it as an assumption.
-- There is no power, comparison or string function. For an outcome that needs one (an annuity's `(1 + r)^-n`), make its inputs one enum of representative combinations (`"5000|7.5|24"`, split by the adapter) with `=` literal outcomes computed outside the CLI, at least one of them half a step or more past a multiple (an unrounded 12.3456 for 12.35) so truncation fails.
-- Set `"strength": 3` only when unknown interactions of three inputs, not covered by any rule, are a real risk. It multiplies the case count.
-- With only two fields, `strength: 2` is every combination. When rules describe all the logic, offer `"strength": 1` (each value at least once, plus the rule boundary cases) as a smaller suite and let the user choose. At strength 1 a rule moves one of its fields at a time while the others keep their first value, so the edges of two fields never meet: keep 2 for relation and configuration fields.
+- `when` maps fields to valid partition labels; most specific rule first. End with catch-all `{"when": {}}`; without it every combination of the mentioned valid partitions must match a rule.
+- Every rule gets a matching case plus one per value of each condition field, BVA edges included, other conditions held (catches `>` vs `>=` in 3-condition rules without 3-wise). Fields outside the rule are re-chosen so no earlier rule captures the case; if none works, it stays.
+- `expected` is a literal (`"rejected"`) or `=` formula computed per case; a fixed number is `"=19.99"` (bare `"19.99"` stays a string). Formulas: field names (letters, digits, `_`, not leading digit), numbers (`1.5`, `1e-5`), `+ - * / ( )`, unary `-`/`+`, `min`, `max`, `round/floor/ceil(x, step)` to a multiple of `step` (`round` ties toward +infinity: `round(-2.5, 1)` is -2). Results keep 12 significant digits (`round(x, 0.01)` drops cents from 10,000,000,000.01). Include the requirement's output rounding, or list it as an assumption.
+- No power, comparison or string function: for an outcome needing one (annuity `(1 + r)^-n`), make its inputs one enum of representative combinations (`"5000|7.5|24"`, split by the adapter) with literal `=` outcomes computed outside the CLI, one at least half a step past a multiple (unrounded 12.3456 for 12.35) so truncation fails.
+- `"strength": 3` only when unknown 3-input interactions outside every rule are a real risk; it multiplies cases. Two fields at strength 2 is every combination. When rules hold all the logic, offer `"strength": 1` (each value once plus rule boundary cases); at strength 1 the edges of two fields never meet, so keep 2 for relation and configuration fields.
 
-See `fixtures/price-calculation.spec.json` for a complete example.
+Complete example: `fixtures/price-calculation.spec.json`.
 
 ### 4. Generate and confirm coverage
 
@@ -135,62 +110,40 @@ node src/ep.ts  --spec generated/<feature>/spec.json --out generated/<feature>/e
 node src/pairwise.ts --spec generated/<feature>/spec.json --debug --out generated/<feature>/cases.json
 ```
 
-The BVA and EP files show the chosen values for review. Pairwise derives them itself from `--spec`. If you edit the value files, pass both with `--bva` and `--ep`, and keep `--spec` for the rules; every spec partition needs a value in them (`--bva` alone has no enum, set or `invalid`-list values, `--ep` alone silently drops the BVA edges).
+BVA and EP files are for review; pairwise derives values from `--spec`. If you edit the value files, pass both `--bva` and `--ep` plus `--spec` for rules, with a value for every partition (`--bva` alone lacks enum, set and `invalid` values; `--ep` alone drops BVA edges).
 
-The report goes to stderr. Proceed only when it shows `uncovered: none`, and `uncovered rules: none` when there are rules. A case count a little above the lower bound is normal. `--strength N` overrides the spec.
+The report goes to stderr. Proceed only on `uncovered: none` (and `uncovered rules: none` with rules). A count a little above the lower bound is normal. `--strength N` overrides the spec.
 
-Output shapes (read `cases`, the file is not an array):
+Output shapes (read `cases`; files are not arrays):
 
 - `bva.json`, `ep.json`: `{"technique", "fields": {"<name>": [{"label", "value", "valid", "partition"}]}}`
-- `cases.json`: `{"technique", "strength", "cases": [{"id", "valid", "expected", "formula"?, "input": {"<name>": value}, "fault"?}]}`. `expected` is the rule's literal, the computed number for `=` rules (with `formula` holding the text), `valid` without rules, or `invalid`. `fault` names the invalid value of a negative case.
-- `cases.system.json`, only with an adapter: `cases.json` holds spec fields, not the system's inputs, so right after generating run every case's `input` through `toInput` into this file (the same cases with system inputs). Tests in any language read it; the CLI and the MCP tools never run the adapter, and `--verify` audits only suites written in spec fields.
+- `cases.json`: `{"technique", "strength", "cases": [{"id", "valid", "expected", "formula"?, "input": {"<name>": value}, "fault"?}]}`. `expected` is the literal, the computed number (`formula` holds the text), `valid` without rules, or `invalid`; `fault` names a negative's invalid value.
+- `cases.system.json`, only with an adapter: run every case's `input` through `toInput` right after generating. Tests read it; the CLI and MCP never run the adapter, and `--verify` audits only suites in spec fields.
 
-Positive cases combine valid values only; `valid: true` means each value is valid alone, not that the combination is possible. Each negative case is one base row with one value swapped for an invalid one; `--debug` prints `negative base row` and its outcome. If the system rejects that row before it checks the swapped value (a rule that rejects first, another check that fails first), every negative is masked: put a value that reaches the validators first in an enum's `values` or set partitions (a range field always starts from its lowest valid range), or use one spec per mode. Don't hand-edit cases to combine invalid values.
+Positive cases combine valid values only; `valid: true` means each value is valid alone, not that the combination exists. Each negative is the `negative base row` (printed by `--debug` with its outcome) with one value swapped for an invalid one. If the system rejects that row before checking the swapped value, every negative is masked: put a value reaching the validators first in an enum's `values` or set partitions (a range starts at its lowest valid range), or one spec per mode. Never hand-edit cases to combine invalid values.
 
-Quick single-field answers without a spec file: `node src/bva.ts --name price --min 0.01 --max 999.99 --step 0.01`, `node src/bva.ts --name code --type string --min 1 --max 8`, or `node src/ep.ts --name country --values PL,BY,DE --invalid XX`.
+Single field without a spec: `node src/bva.ts --name price --min 0.01 --max 999.99 --step 0.01`, `node src/bva.ts --name code --type string --min 1 --max 8`, `node src/ep.ts --name country --values PL,BY,DE --invalid XX`.
 
-To audit a suite written by hand or by another tool (a JSON array of rows, or a cases file; `"-"` means "don't care", except on a field that has `"-"` as a value):
-
-```bash
-node src/pairwise.ts --spec generated/<feature>/spec.json --verify existing-cases.json
-```
-
-It exits with code 1 and lists uncovered tuples and rules (`rule N (<expected>)`) if coverage is incomplete. It warns `<field>=<value> is in no domain` for each value of a spec field that is not a generated valid value, without changing the exit code; other columns and `"-"` cells are ignored. It audits positive rows only: it skips `valid: false` cases and doesn't check `expected` or whether invalid values are tested.
+Audit an existing suite (JSON array of rows or a cases file; `"-"` = don't care unless `"-"` is a field value): `node src/pairwise.ts --spec generated/<feature>/spec.json --verify existing-cases.json`. It exits 1 listing uncovered tuples and rules (`rule N (<expected>)`); warns `<field>=<value> is in no domain` without changing the exit code; ignores other columns, `"-"` cells and `valid: false` rows, and checks neither `expected` nor invalid coverage.
 
 ### 5. Review the spec
 
-Give the `test-spec-reviewer` subagent the requirement, `context.md` and the spec path. On `revise`, apply the critical fixes, re-run step 4, and ask the user about the warnings. If subagents aren't available, or you are running as a subagent (for example `test-case-designer`), walk its checklist yourself (`.cursor/agents/test-spec-reviewer.md`).
+Give the `test-spec-reviewer` subagent the requirement, `context.md` and the spec path. On `revise`, apply critical fixes, rerun step 4, ask the user about warnings. Without subagents, or when you are one (`test-case-designer`), walk its checklist yourself (`.cursor/agents/test-spec-reviewer.md`).
 
 ### 6. Present the cases
 
-Summarise first, then give a table from `cases.system.json` when there is one, else `cases.json`:
+Summarise first, then a table from `cases.system.json` if present, else `cases.json`:
 
 ```markdown
-Generated 70 cases for price-calculation: 62 positive (all 66 pairs, lower bound 40; all 7 rules at their condition boundaries) and 8 negative, each with one invalid value. The requirement doesn't say how invalid input is handled (open question).
+Generated 70 cases for price-calculation: 62 positive (all 66 pairs, lower bound 40; all 7 rules at their boundaries) and 8 negative, one invalid value each. Rejection of invalid input is unspecified (open question).
 
 | ID | Valid | price | weight | card | Expected | Formula | Fault |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| TC-001 | yes | 50 | 2.5 | false | 50 | round(price, 0.1) | |
-| TC-047 | yes | 200 | 2.5 | true | 170 | round(0.85 * price, 0.1) | |
 | TC-066 | no | -0.1 | 2.5 | false | invalid | | price: bva below.max |
-| TC-068 | no | 50 | "abc" | false | invalid | | weight: ep invalid:abc |
 ```
 
-List the file paths, the system model's gaps (what is `outside the model`), every assumption made while modelling (steps, inclusive or exclusive bounds, open ends, added invalid values, unit mappings, adapter conversions), and the gaps: what the CLI can't model, such as positive rows that are impossible combinations. State that the coverage figures are coverage of the spec, not of the system.
+List file paths, the model's `outside the model` gaps, every assumption (steps, bound inclusivity, open ends, added invalid values, unit mappings, adapter conversions) and CLI gaps (impossible positive rows). State that coverage is of the spec, not the system.
 
 ## Errors
 
-The CLI prints `error: <message>` and exits with code 1. The message names the field, partition or rule at fault:
-
-- `is not a multiple of step`: fix `step` or the bound
-- `partitions a and b overlap`: bands share a value; move one bound by one step
-- `is in more than one partition, <a> and <b>`: an `invalid` or set value falls inside a range, or a string inside a length partition; move it outside, or put format strings on a field without lengths
-- `listed twice in`: a value appears twice in one partition; remove one
-- `reserved field name`: `Object.prototype` has the name (`constructor`, `toString`, `__proto__`); rename the field
-- `unknown key x`: a misspelt or unsupported key (`vaild`, `autoinvalid`); fix or remove it
-- `x=y is not a valid partition`: a rule uses an unknown or invalid label
-- `can never match`: earlier rules cover every row this rule would match; reorder or remove it
-- `no rule matches x=a, y=b`: the table has a hole; add a rule for it or a catch-all `{"when": {}}`
-- `formula ...: unknown name`, `unexpected`, `ends too early`, `field x is not an identifier`, `x is "abc", not a number`: fix the `=` formula (names are field names of letters, digits and `_`, not starting with a digit, and any formula containing a non-identifier field name fails even as part of `data-b` for `a-b`; only `round`, `floor`, `ceil`, `min`, `max` exist; valid values must be numbers)
-- `has no value in --bva/--ep files` or `is valid in one ... and invalid in the other`: pass both value files with matching validity for every spec partition, or `--spec` alone
-- `exceed the 1000000 budget`: too many t-tuples; lower the strength or reduce values (fewer partitions, or split the spec)
+`error: <message>` (exit 1) names the field, partition or rule; fix the spec it points at. Non-obvious ones: `is in more than one partition` (an `invalid` or set value inside a range or length partition: move it, or use a lengthless field); `reserved field name` (`constructor`, `__proto__`: rename); `can never match` (earlier rules cover it: reorder or remove); `field x is not an identifier` (any non-identifier field name breaks a formula); `exceed the 1000000 budget` (lower strength, fewer partitions, or split the spec).
