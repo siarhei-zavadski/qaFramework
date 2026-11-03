@@ -82,7 +82,7 @@ Agreement = runs matching the majority / K. A divergence usually marks an ambigu
 
 ### 7. Judge and report
 
-Give `change-judge` the requirement, intent, repo and refs, and the evidence from steps 2 to 6, plus the claims table; never your reasoning or the authoring transcript. On `block` or doubt, rerun it in a fresh subagent; differing verdicts are both reported and the user asked. Without subagents, or as one, walk its rubric (`.cursor/agents/change-judge.md`) and say the verdict isn't independent.
+Give `change-judge` the requirement, intent, repo and refs, and the evidence from steps 2 to 6, plus the claims table; never your reasoning or the authoring transcript. On `block` or doubt, rerun it in a fresh subagent; differing verdicts are both reported and the user asked. Without subagents, or as one, walk its rubric (`.cursor/agents/change-judge.md`; `qa-framework:change-judge` in a Claude Code plugin install) and say the verdict isn't independent.
 
 Write and present `generated/<change>/gate.md`:
 

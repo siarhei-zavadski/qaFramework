@@ -5,8 +5,8 @@
  */
 
 import {spawnSync} from 'node:child_process';
-import {existsSync} from 'node:fs';
-import {isAbsolute, resolve} from 'node:path';
+import {existsSync, lstatSync, realpathSync} from 'node:fs';
+import {dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import {createInterface} from 'node:readline';
 import {inputOptions, isRecord} from './spec.ts';
 
@@ -42,8 +42,8 @@ const TIMEOUT_MS = 120_000;
 const MAX_RESPONSE_CHARS = 100_000;
 
 const FLAGS: Record<string, string> = {
-  spec: 'Spec file, relative to cwd.',
-  out: 'Output file, relative to cwd; omit to get the JSON back.',
+  spec: 'Spec file inside cwd (or the reference spec).',
+  out: 'Output .json file under generated/ in cwd; omit to get the JSON back.',
   name: 'Single-field shorthand without a spec: field name.',
   type: 'Single-field shorthand: number, string or enum.',
   min: 'Single-field shorthand: minimum (minLength for strings).',
@@ -51,9 +51,9 @@ const FLAGS: Record<string, string> = {
   step: 'Single-field shorthand: smallest increment.',
   values: 'Single-field shorthand: comma-separated valid values.',
   invalid: 'Single-field shorthand: comma-separated invalid values.',
-  bva: 'Edited bva.json to use instead of values derived from the spec.',
-  ep: 'Edited ep.json to use instead of values derived from the spec.',
-  verify: 'Suite file to audit instead of generating cases.',
+  bva: 'Edited bva.json inside cwd, used instead of derived values.',
+  ep: 'Edited ep.json inside cwd, used instead of derived values.',
+  verify: 'Suite file inside cwd to audit instead of generating cases.',
   strength: 'Combination strength t, overrides the spec.',
   debug: 'Append the coverage report.',
 };
@@ -79,19 +79,27 @@ function schema(flags: string[]): InputSchema {
 
 const SPEC_FLAGS = Object.keys(inputOptions);
 
+// Plugin users never see AGENTS.md, so the tool descriptions carry the limits.
+const LIMITS =
+  ` Runs over ${TIMEOUT_MS / 1000} s are killed; stdout and stderr each stop ` +
+  `at ${MAX_RESPONSE_CHARS.toLocaleString('en-US')} characters, so pass ` +
+  '`out` for large results.';
+
 const TOOLS: Tool[] = [
   {
     name: 'bva',
     description:
       'Boundary value analysis: both edges of every range partition. ' +
-      'Same flags as `node src/bva.ts`.',
+      'Same flags as `node src/bva.ts`.' +
+      LIMITS,
     inputSchema: schema(SPEC_FLAGS),
   },
   {
     name: 'ep',
     description:
       'Equivalence partitioning: one representative per partition. ' +
-      'Same flags as `node src/ep.ts`.',
+      'Same flags as `node src/ep.ts`.' +
+      LIMITS,
     inputSchema: schema(SPEC_FLAGS),
   },
   {
@@ -99,7 +107,11 @@ const TOOLS: Tool[] = [
     description:
       't-wise positive cases with rule outcomes, plus one negative case per ' +
       'invalid value; with `verify`, audits an existing suite. Same flags as ' +
-      `\`node src/pairwise.ts\`. Reference spec: ${REFERENCE_SPEC}`,
+      `\`node src/pairwise.ts\`. Reference spec: ${REFERENCE_SPEC}.` +
+      LIMITS +
+      ' Strength 3 near 455,000 tuples takes 40 to 50 s. With `verify`, a ' +
+      'suite with gaps is not an error: the text starts with ' +
+      '`uncovered (exit 1)`.',
     inputSchema: schema([
       ...SPEC_FLAGS,
       'bva',
@@ -130,6 +142,43 @@ function truncate(text: string, hint = ''): string {
     : text;
 }
 
+const READ_FLAGS = ['spec', 'bva', 'ep', 'verify'];
+const FIXTURES = realpathSync(resolve(import.meta.dirname, '../fixtures'));
+
+function inside(path: string, dir: string): boolean {
+  const rel = relative(dir, path);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+/**
+ * Tool arguments come from an agent that may be prompt-injected, so reads
+ * stay inside cwd (or fixtures/, for the reference spec) and `out` only
+ * writes a .json under <cwd>/generated/, never through a symlink.
+ */
+function pathError(flags: Record<string, unknown>, cwd: string): string {
+  const root = realpathSync(cwd);
+  for (const flag of READ_FLAGS) {
+    if (flags[flag] === undefined) continue;
+    const path = resolve(root, String(flags[flag]));
+    const real = existsSync(path) ? realpathSync(path) : path;
+    if (!inside(real, root) && !inside(real, FIXTURES)) {
+      return `${flag} must be inside cwd`;
+    }
+  }
+  if (flags.out === undefined) return '';
+  const out = resolve(root, String(flags.out));
+  const parent = dirname(out);
+  if (
+    !out.endsWith('.json') ||
+    !inside(out, join(root, 'generated')) ||
+    (existsSync(out) && lstatSync(out).isSymbolicLink()) ||
+    (existsSync(parent) && !inside(realpathSync(parent), root))
+  ) {
+    return 'out must be a .json file under generated/ in cwd';
+  }
+  return '';
+}
+
 function callTool(params: Record<string, unknown>): ToolResult {
   const tool = TOOLS.find(t => t.name === params.name);
   if (!tool) return textResult(`error: unknown tool ${params.name}`, true);
@@ -143,6 +192,8 @@ function callTool(params: Record<string, unknown>): ToolResult {
   if (unknown !== undefined) {
     return textResult(`error: unknown argument ${unknown}`, true);
   }
+  const confined = pathError(flags, cwd);
+  if (confined) return textResult(`error: ${confined}`, true);
   // ponytail: one node process per call (~50 ms) keeps the CLI's exit codes
   // and messages; import the modules directly if latency ever matters.
   const child = spawnSync(
@@ -157,6 +208,14 @@ function callTool(params: Record<string, unknown>): ToolResult {
   ]
     .filter(Boolean)
     .join('\n');
+  // `--verify` exits 1 with a report on stdout when tuples or rules are
+  // uncovered. That is a finding, not a failure, and clients cut long error
+  // text (Claude Code keeps the first and last 5,000 characters).
+  const coverageGap =
+    flags.verify !== undefined &&
+    child.status === 1 &&
+    !/^error: /m.test(child.stderr);
+  if (coverageGap) return textResult(`uncovered (exit 1)\n${text}`, false);
   return textResult(text || 'done', child.status !== 0);
 }
 

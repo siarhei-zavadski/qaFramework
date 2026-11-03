@@ -5,7 +5,7 @@ description: Designs test cases from any requirement with this repo's CLI (src/b
 
 # Generating test cases with the qaFramework CLI
 
-In the qaFramework repo (`src/pairwise.ts` exists), run the commands below from the repo root (Node 26 runs `.ts` directly). Elsewhere, call the `qa-framework` MCP tools `bva`, `ep`, `pairwise` with the same flags without `--`, plus `cwd` (absolute workspace root): `{"cwd": "/abs/project", "spec": "generated/x/spec.json", "debug": true, "out": "generated/x/cases.json"}`. Report and errors come back as text. The `pairwise` tool description gives `<root>/fixtures/price-calculation.spec.json`; other repo files named here (`.cursor/agents/...`) are under the same `<root>`.
+In the qaFramework repo (`src/pairwise.ts` exists), run the commands below from the repo root (Node 22.18 or later runs `.ts` directly). Elsewhere, call the `qa-framework` MCP tools `bva`, `ep`, `pairwise` with the same flags without `--`, plus `cwd` (absolute workspace root): `{"cwd": "/abs/project", "spec": "generated/x/spec.json", "debug": true, "out": "generated/x/cases.json"}`. Report and errors come back as text. Input paths must be inside `cwd` (or the reference spec), and `out` must be a `.json` under `generated/`. The `pairwise` tool description gives `<root>/fixtures/price-calculation.spec.json`; other repo files named here (`.cursor/agents/...`) are under the same `<root>`. Installed as a Claude Code plugin, the subagents are named `qa-framework:test-case-designer`, `qa-framework:test-spec-reviewer` and `qa-framework:change-judge`.
 
 All output goes to `generated/<feature>/` (disposable). Follow steps 0–6 in order.
 
@@ -126,7 +126,7 @@ Positive cases combine valid values only; `valid: true` means each value is vali
 
 Single field without a spec: `node src/bva.ts --name price --min 0.01 --max 999.99 --step 0.01`, `node src/bva.ts --name code --type string --min 1 --max 8`, `node src/ep.ts --name country --values PL,BY,DE --invalid XX`.
 
-Audit an existing suite (JSON array of rows or a cases file; `"-"` = don't care unless `"-"` is a field value): `node src/pairwise.ts --spec generated/<feature>/spec.json --verify existing-cases.json`. It exits 1 listing uncovered tuples and rules (`rule N (<expected>)`); warns `<field>=<value> is in no domain` without changing the exit code; ignores other columns, `"-"` cells and `valid: false` rows, and checks neither `expected` nor invalid coverage.
+Audit an existing suite (JSON array of rows or a cases file; `"-"` = don't care unless `"-"` is a field value): `node src/pairwise.ts --spec generated/<feature>/spec.json --verify existing-cases.json`. It exits 1 listing uncovered tuples and rules (`rule N (<expected>)`; the MCP tool returns that report as a normal result starting `uncovered (exit 1)`); warns `<field>=<value> is in no domain` without changing the exit code; ignores other columns, `"-"` cells and `valid: false` rows, and checks neither `expected` nor invalid coverage.
 
 ### 5. Review the spec
 

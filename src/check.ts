@@ -4,9 +4,19 @@
 
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import {analyzeBoundaries, boundaryValues} from './bva.ts';
 import {analyzePartitions, partitionValues} from './ep.ts';
 import {
@@ -20,7 +30,18 @@ import {
 } from './pairwise.ts';
 import {parseFormula} from './formula.ts';
 import {matchRule, rowsForRules, uncoveredRules} from './rules.ts';
-import {parseSpec, readJson, type Spec} from './spec.ts';
+import {isRecord, parseSpec, readJson, type Spec} from './spec.ts';
+import {
+  choose,
+  handshake,
+  parseArgs,
+  parseJsonc,
+  parseResult,
+  planSteps,
+  pluginRoot,
+  resolveSource,
+  type Env,
+} from '../installer/setup.mjs';
 
 process.chdir(`${import.meta.dirname}/..`);
 
@@ -749,6 +770,11 @@ const rpc = (id: number, method: string, params: object) =>
   JSON.stringify({jsonrpc: '2.0', id, method, params});
 const pairwiseCall = (id: number, args: object) =>
   rpc(id, 'tools/call', {name: 'pairwise', arguments: args});
+const mcpDir = realpathSync(mkdtempSync(join(tmpdir(), 'qaf-mcp-')));
+writeFileSync(join(mcpDir, 'empty-suite.json'), '[]');
+writeFileSync(join(mcpDir, 'spec.json'), readFileSync('spec.example.json'));
+mkdirSync(join(mcpDir, 'generated'));
+symlinkSync('/etc', join(mcpDir, 'generated', 'escape'));
 const mcp = spawnSync(process.execPath, ['src/mcp.ts'], {
   encoding: 'utf8',
   input: [
@@ -770,9 +796,39 @@ const mcp = spawnSync(process.execPath, ['src/mcp.ts'], {
       spec: 'spec.example.json',
       adapter: 'x.mjs',
     }),
+    pairwiseCall(7, {
+      cwd: mcpDir,
+      spec: 'spec.json',
+      verify: 'empty-suite.json',
+    }),
+    pairwiseCall(8, {
+      cwd: process.cwd(),
+      spec: 'spec.example.json',
+      verify: 'spec.example.json',
+    }),
+    ...[
+      {spec: 'spec.json', out: '/tmp/qaf-escape.json'},
+      {spec: 'spec.json', out: '../escape.json'},
+      {spec: 'spec.json', out: 'generated/cases.txt'},
+      {spec: 'spec.json', out: 'generated/escape/cases.json'},
+      {spec: '/etc/hosts'},
+      {spec: 'spec.json', verify: '../../etc/hosts'},
+      {spec: 'spec.json', out: 'generated/cases.json'},
+      {spec: resolve('fixtures/price-calculation.spec.json')},
+    ].map((args, i) => pairwiseCall(9 + i, {cwd: mcpDir, ...args})),
   ].join('\n'),
 });
-const [init, list, call, noCwd, big, mcpAdapter] = mcp.stdout
+const [
+  init,
+  list,
+  call,
+  noCwd,
+  big,
+  mcpAdapter,
+  gaps,
+  mcpBadSuite,
+  ...confined
+] = mcp.stdout
   .trim()
   .split('\n')
   .map(line => JSON.parse(line));
@@ -786,6 +842,27 @@ assert.match(call.result.content[0].text, /"cases"/);
 assert.equal(noCwd.result.isError, true);
 assert.equal(mcpAdapter.result.isError, true);
 assert.match(mcpAdapter.result.content[0].text, /unknown argument adapter/);
+// Coverage gaps from `verify` are a report, not an error; a bad suite still is.
+assert.equal(gaps.result.isError, false);
+assert.match(gaps.result.content[0].text, /^uncovered \(exit 1\)\n2-tuples/);
+assert.equal(mcpBadSuite.result.isError, true);
+assert.match(mcpBadSuite.result.content[0].text, /^error: /m);
+// Prompt-injected arguments can't write outside <cwd>/generated or read
+// outside cwd; the reference spec in fixtures/ stays readable.
+const confinedText = confined.map(r => r.result.content[0].text);
+assert.deepEqual(confinedText.slice(0, 6), [
+  'error: out must be a .json file under generated/ in cwd',
+  'error: out must be a .json file under generated/ in cwd',
+  'error: out must be a .json file under generated/ in cwd',
+  'error: out must be a .json file under generated/ in cwd',
+  'error: spec must be inside cwd',
+  'error: verify must be inside cwd',
+]);
+assert.equal(confined[6].result.isError, false, confinedText[6]);
+assert.ok(existsSync(join(mcpDir, 'generated', 'cases.json')));
+assert.equal(confined[7].result.isError, false, confinedText[7]);
+assert.ok(!existsSync('/tmp/qaf-escape.json'));
+rmSync(mcpDir, {recursive: true});
 // Cases on stdout and the debug report on stderr each pass spawnSync's default
 // 1 MiB buffer; each is cut to 100k, only the stdout cut hints at `out`
 // (which redirects stdout alone), and the two are joined by '\n'.
@@ -797,6 +874,515 @@ assert.match(bigText, /tuples covered/);
 assert.equal(bigText.indexOf(`${cut}${hint}\n`), 100_000);
 assert.ok(bigText.endsWith(cut), bigText.slice(-80));
 assert.equal(bigText.length, 2 * (100_000 + cut.length) + hint.length + 1);
+
+// Plugin manifests: Claude Code and Cursor ship the same skills, agents and
+// version; Claude Code needs every agent listed by file.
+const record = (x: unknown): Record<string, unknown> => {
+  assert.ok(isRecord(x), JSON.stringify(x));
+  return x;
+};
+const claudePlugin = record(readJson('.claude-plugin/plugin.json'));
+const cursorPlugin = record(readJson('.cursor-plugin/plugin.json'));
+const marketplace = record(readJson('.claude-plugin/marketplace.json'));
+for (const key of ['name', 'description', 'version', 'repository']) {
+  assert.equal(claudePlugin[key], cursorPlugin[key], key);
+}
+assert.equal(claudePlugin.homepage, cursorPlugin.homepage);
+assert.equal(init.result.serverInfo.version, claudePlugin.version);
+// The marketplace has its own name; its single entry is the plugin, and the
+// version lives only in the plugin manifests (Claude Code warns otherwise).
+assert.equal(marketplace.name, 'siarhei-zavadski');
+assert.equal(marketplace.description, claudePlugin.description);
+assert.ok(Array.isArray(marketplace.plugins));
+assert.equal(marketplace.plugins.length, 1);
+const listing = record(marketplace.plugins[0]);
+assert.equal(listing.name, claudePlugin.name);
+assert.equal(listing.description, claudePlugin.description);
+assert.equal(listing.source, './');
+assert.ok(!Object.hasOwn(listing, 'version'));
+const agentFiles = readdirSync('.cursor/agents')
+  .filter(file => file.endsWith('.md'))
+  .sort()
+  .map(file => `./.cursor/agents/${file}`);
+assert.deepEqual(claudePlugin.agents, agentFiles);
+for (const path of [claudePlugin.skills, ...agentFiles]) {
+  assert.ok(typeof path === 'string' && path.startsWith('./'), String(path));
+  assert.ok(existsSync(path), path);
+}
+const mcpServers = record(claudePlugin.mcpServers);
+assert.deepEqual(record(mcpServers['qa-framework']).args, [
+  '${CLAUDE_PLUGIN_ROOT}/src/mcp.ts',
+]);
+// Cursor reads its own manifest (component paths replace folder discovery)
+// and the root mcp.json.
+for (const path of [cursorPlugin.skills, cursorPlugin.agents]) {
+  assert.ok(typeof path === 'string' && existsSync(path), String(path));
+}
+const cursorMcp = record(record(readJson('mcp.json')).mcpServers);
+assert.deepEqual(record(cursorMcp['qa-framework']).args, [
+  '${CURSOR_PLUGIN_ROOT}/src/mcp.ts',
+]);
+
+// Installer: package rules npx depends on, both manifests' MCP commands, and
+// the step planner against fake machines.
+assert.ok(!existsSync('bin'), 'a top-level bin/ goes on the Bash PATH');
+const pkg = record(readJson('package.json'));
+const scripts = record(pkg.scripts);
+for (const hook of [
+  'build',
+  'prepare',
+  'prepack',
+  'preinstall',
+  'install',
+  'postinstall',
+]) {
+  assert.ok(!Object.hasOwn(scripts, hook), `package.json script ${hook}`);
+}
+assert.ok(!Object.hasOwn(pkg, 'dependencies'));
+const entry = String(record(pkg.bin)['qa-framework']);
+const entryText = readFileSync(entry, 'utf8');
+assert.ok(entryText.startsWith('#!/usr/bin/env node\n'));
+assert.doesNotMatch(entryText, /^import\b/m);
+assert.match(entryText, /await import\('\.\/setup\.mjs'\)/);
+const help = spawnSync(process.execPath, [entry, '--help'], {encoding: 'utf8'});
+assert.equal(help.status, 0);
+assert.match(help.stdout, /^Usage: npx github:siarhei-zavadski\/qaFramework/);
+for (const harness of ['claude', 'cursor'] as const) {
+  const shake = handshake(process.cwd(), harness);
+  assert.ok(shake.ok, `${harness}: ${shake.message}`);
+}
+
+const repo = process.cwd();
+const home = '/home/u/.cursor';
+const pluginDir = `${home}/plugins/local/qa-framework`;
+const copyDir = `${home}/qa-framework`;
+const absent = (path: string) => ({
+  path,
+  state: 'absent' as const,
+  origin: undefined,
+  dirty: false,
+});
+type LinkState = Env['cursor']['links'][number]['state'];
+const links = (root: string, state: LinkState = 'missing') => [
+  {
+    path: `${home}/skills/generating-test-cases`,
+    target: `${root}/.cursor/skills/generating-test-cases`,
+    state,
+    otherRoot: state === 'other-root' ? '/old/qaFramework' : undefined,
+  },
+  {
+    path: `${home}/agents/change-judge.md`,
+    target: `${root}/.cursor/agents/change-judge.md`,
+    state,
+    otherRoot: state === 'other-root' ? '/old/qaFramework' : undefined,
+  },
+];
+const cursorEnv = (root = repo): Env['cursor'] => ({
+  home: true,
+  cli: 'agent',
+  cliVersion: '2026.10.22',
+  localPlugins: false,
+  plugin: absent(pluginDir),
+  copy: absent(copyDir),
+  root,
+  mcpFile: `${home}/mcp.json`,
+  mcpState: 'missing',
+  mcpServer: undefined,
+  mcpOtherRoot: undefined,
+  mcpError: undefined,
+  mcpComments: false,
+  links: links(root),
+  extraLinks: [],
+  marketplaceCopies: [],
+});
+const fakeEnv = (over: Partial<Env> = {}): Env => ({
+  root: repo,
+  mode: 'checkout',
+  hasManifests: true,
+  source: repo,
+  cloneUrl: repo,
+  sourceDirty: false,
+  git: true,
+  tty: false,
+  cwd: '/work/app',
+  node: '/usr/bin/node',
+  claude: {version: '2.1.317', marketplaces: [], plugins: []},
+  cursor: cursorEnv(),
+  ...over,
+});
+const withCursor = (over: Partial<Env['cursor']>) =>
+  fakeEnv({cursor: {...cursorEnv(), ...over}});
+const userPlugin = {
+  id: 'qa-framework@siarhei-zavadski',
+  scope: 'user',
+  enabled: true,
+  installPath: '/cache/qa-framework',
+  readFromFolder: undefined,
+  projectPath: undefined,
+};
+const ourMarket = {name: 'siarhei-zavadski', source: 'directory', path: repo};
+const withClaude = (
+  plugins: Env['claude']['plugins'],
+  marketplaces: Env['claude']['marketplaces'] = [ourMarket],
+) => fakeEnv({claude: {version: '2.1.317', marketplaces, plugins}});
+type Steps = ReturnType<typeof planSteps>;
+const plan = (argv: string[], env: Env) => planSteps(parseArgs(argv), env);
+const kinds = (steps: Steps) => steps.map(s => s.kind);
+const runs = (steps: Steps) =>
+  steps.flatMap(s => (s.kind === 'run' ? [[s.cmd, ...s.args].join(' ')] : []));
+const edits = (steps: Steps) =>
+  steps.flatMap(s => {
+    if (s.kind === 'link') return [`link ${s.path} ${s.target}`];
+    if (s.kind === 'unlink') return [`unlink ${s.path}`];
+    if (s.kind === 'mcp-set')
+      return [`mcp ${s.server.command} ${s.server.args}`];
+    if (s.kind === 'mcp-remove' || s.kind === 'remove') return [s.kind];
+    return [];
+  });
+const texts = (steps: Steps) =>
+  steps.map(s => ('text' in s ? s.text : '')).join('\n');
+const stops = (steps: Steps) => kinds(steps).filter(k => k === 'stop').length;
+
+// Checkout, admin blocks local plugins: Claude installs in place, Cursor gets
+// the user config pointing at the checkout.
+const both = plan(['--claude', '--cursor'], fakeEnv());
+assert.deepEqual(runs(both), [
+  `claude plugin install qa-framework --marketplace ${repo} --scope user -y --json`,
+]);
+assert.deepEqual(edits(both), [
+  `mcp /usr/bin/node ${repo}/src/mcp.ts`,
+  `link ${home}/skills/generating-test-cases ${repo}/.cursor/skills/generating-test-cases`,
+  `link ${home}/agents/change-judge.md ${repo}/.cursor/agents/change-judge.md`,
+]);
+// Local plugins allowed: the plugin clone instead.
+const allowed = withCursor({localPlugins: true});
+assert.deepEqual(runs(plan(['--cursor'], allowed)), [
+  `git clone --quiet ${repo} ${pluginDir}`,
+]);
+assert.deepEqual(edits(plan(['--cursor'], allowed)), []);
+assert.match(
+  texts(plan(['--cursor', '--cursor-mode', 'plugin'], fakeEnv())),
+  /admin blocks local plugins/,
+);
+assert.match(
+  texts(
+    plan(
+      ['--cursor'],
+      withCursor({localPlugins: true, links: links(repo, 'ours')}),
+    ),
+  ),
+  /still link qa-framework/,
+);
+// GitHub: Claude from owner/repo; Cursor config from a stable clone.
+const github = fakeEnv({
+  mode: 'package',
+  source: 'siarhei-zavadski/qaFramework',
+  cloneUrl: 'https://github.com/siarhei-zavadski/qaFramework.git',
+  cursor: cursorEnv(copyDir),
+});
+const fromGithub = plan(['--claude', '--cursor'], github);
+assert.deepEqual(runs(fromGithub), [
+  'claude plugin install qa-framework --marketplace siarhei-zavadski/qaFramework --scope user -y --json',
+  `git clone --quiet https://github.com/siarhei-zavadski/qaFramework.git ${copyDir}`,
+]);
+assert.equal(edits(fromGithub)[0], `mcp /usr/bin/node ${copyDir}/src/mcp.ts`);
+assert.deepEqual(
+  runs(plan(['--claude', '--scope', 'project'], github)).map(r =>
+    r.split(' ').slice(1, 4).join(' '),
+  ),
+  ['plugin marketplace add', 'plugin install qa-framework@siarhei-zavadski'],
+);
+// An insteadOf rewrite turns the clone's origin into ssh://: still ours.
+const sshCopy = {
+  ...absent(copyDir),
+  state: 'clone' as const,
+  origin: 'ssh://git@github.com/siarhei-zavadski/qaFramework.git',
+};
+assert.equal(
+  stops(
+    plan(['--cursor'], {
+      ...github,
+      cursor: {...cursorEnv(copyDir), copy: sshCopy},
+    }),
+  ),
+  0,
+);
+assert.equal(stops(plan(['--claude'], {...github, hasManifests: false})), 1);
+assert.equal(stops(plan(['--cursor'], {...github, hasManifests: false})), 1);
+assert.equal(stops(plan(['--claude', '--scope', 'project'], fakeEnv())), 1);
+const foreign = withClaude(
+  [],
+  [{name: 'siarhei-zavadski', source: 'github', repo: 'x/y'}],
+);
+assert.deepEqual(kinds(plan(['--claude'], foreign)), ['stop']);
+assert.equal(
+  stops(
+    plan(
+      ['--claude'],
+      fakeEnv({claude: {version: '2.1.200', marketplaces: [], plugins: []}}),
+    ),
+  ),
+  1,
+);
+
+// Claude: installed is a no-op, disabled gets enabled, uninstall cleans up.
+const installed = withClaude([userPlugin]);
+assert.deepEqual(runs(plan(['--claude'], installed)), []);
+assert.deepEqual(
+  runs(plan(['--claude'], withClaude([{...userPlugin, enabled: false}]))),
+  ['claude plugin enable qa-framework@siarhei-zavadski --scope user --json'],
+);
+assert.deepEqual(runs(plan(['uninstall', '--claude'], installed)), [
+  'claude plugin uninstall qa-framework@siarhei-zavadski --scope user --json',
+  'claude plugin marketplace remove siarhei-zavadski --json',
+]);
+// Plugin already gone, marketplace left over: still removed.
+assert.deepEqual(runs(plan(['uninstall', '--claude'], withClaude([]))), [
+  'claude plugin marketplace remove siarhei-zavadski --json',
+]);
+// Someone else's marketplace of that name is never removed.
+assert.deepEqual(
+  runs(
+    plan(
+      ['uninstall', '--claude'],
+      withClaude(
+        [userPlugin],
+        [{name: 'siarhei-zavadski', source: 'github', repo: 'x/y'}],
+      ),
+    ),
+  ),
+  ['claude plugin uninstall qa-framework@siarhei-zavadski --scope user --json'],
+);
+assert.deepEqual(kinds(plan(['uninstall', '--claude'], fakeEnv())), ['skip']);
+// Another project's local install: update and uninstall leave it alone.
+const elsewhere = {
+  ...userPlugin,
+  scope: 'local',
+  installPath: '/cache/qa-framework',
+  projectPath: '/work/other',
+};
+const copiedUser = {...userPlugin};
+assert.deepEqual(
+  runs(plan(['update', '--claude'], withClaude([elsewhere, copiedUser]))),
+  [
+    'claude plugin marketplace update siarhei-zavadski --json',
+    'claude plugin update qa-framework@siarhei-zavadski --scope user --json',
+  ],
+);
+assert.deepEqual(
+  runs(plan(['uninstall', '--claude'], withClaude([elsewhere, copiedUser]))),
+  ['claude plugin uninstall qa-framework@siarhei-zavadski --scope user --json'],
+);
+const inPlace = {...userPlugin, readFromFolder: repo};
+assert.equal(pluginRoot(inPlace), repo);
+assert.deepEqual(runs(plan(['update', '--claude'], withClaude([inPlace]))), []);
+
+// Cursor config in place: install skips, uninstall removes only ours.
+const ourServer = {command: '/opt/node', args: [`${repo}/src/mcp.ts`]};
+const configured = withCursor({
+  mcpState: 'ours',
+  mcpServer: ourServer,
+  links: links(repo, 'ours'),
+});
+assert.deepEqual(edits(plan(['--cursor'], configured)), []);
+assert.deepEqual(edits(plan(['uninstall', '--cursor'], configured)), [
+  'mcp-remove',
+  `unlink ${home}/skills/generating-test-cases`,
+  `unlink ${home}/agents/change-judge.md`,
+]);
+// A Node upgrade left a dead command: install and update rewrite it.
+const staleNode = withCursor({
+  mcpState: 'stale-node',
+  mcpServer: {command: '/gone/node', args: [`${repo}/src/mcp.ts`]},
+  links: links(repo, 'ours'),
+});
+assert.deepEqual(edits(plan(['--cursor'], staleNode)), [
+  `mcp /usr/bin/node ${repo}/src/mcp.ts`,
+]);
+assert.deepEqual(edits(plan(['update', '--cursor'], staleNode)), [
+  `mcp /usr/bin/node ${repo}/src/mcp.ts`,
+]);
+// The checkout moved: dangling entries are replaced, then removed on uninstall.
+const moved = withCursor({
+  mcpState: 'dangling',
+  mcpServer: {command: '/opt/node', args: ['/old/qaFramework/src/mcp.ts']},
+  links: links(repo, 'dangling'),
+});
+assert.deepEqual(edits(plan(['--cursor'], moved)), [
+  `mcp /usr/bin/node ${repo}/src/mcp.ts`,
+  `unlink ${home}/skills/generating-test-cases`,
+  `link ${home}/skills/generating-test-cases ${repo}/.cursor/skills/generating-test-cases`,
+  `unlink ${home}/agents/change-judge.md`,
+  `link ${home}/agents/change-judge.md ${repo}/.cursor/agents/change-judge.md`,
+]);
+assert.deepEqual(edits(plan(['uninstall', '--cursor'], moved)), [
+  'mcp-remove',
+  `unlink ${home}/skills/generating-test-cases`,
+  `unlink ${home}/agents/change-judge.md`,
+]);
+// Installed from another live checkout: install stops naming its --source.
+const otherRoot = withCursor({
+  mcpState: 'other-root',
+  mcpServer: {command: '/opt/node', args: ['/old/qaFramework/src/mcp.ts']},
+  mcpOtherRoot: '/old/qaFramework',
+  links: links(repo, 'other-root'),
+});
+assert.equal(stops(plan(['--cursor'], otherRoot)), 1);
+assert.match(
+  texts(plan(['--cursor'], otherRoot)),
+  /--source \/old\/qaFramework/,
+);
+assert.deepEqual(edits(plan(['uninstall', '--cursor'], otherRoot)), []);
+assert.match(
+  texts(plan(['uninstall', '--cursor'], otherRoot)),
+  /--source \/old\/qaFramework/,
+);
+// Update adds links for new skills and drops links for removed ones.
+const grown = withCursor({
+  mcpState: 'ours',
+  mcpServer: ourServer,
+  links: [
+    ...links(repo, 'ours'),
+    {
+      ...links(repo)[0]!,
+      path: `${home}/skills/new`,
+      target: `${repo}/.cursor/skills/new`,
+    },
+  ],
+  extraLinks: [
+    {
+      path: `${home}/skills/renamed`,
+      target: `${home}/skills/renamed`,
+      state: 'dangling',
+      otherRoot: undefined,
+    },
+  ],
+});
+assert.deepEqual(edits(plan(['update', '--cursor'], grown)), [
+  `link ${home}/skills/new ${repo}/.cursor/skills/new`,
+  `unlink ${home}/skills/renamed`,
+]);
+assert.ok(
+  edits(plan(['uninstall', '--cursor'], grown)).includes(
+    `unlink ${home}/skills/renamed`,
+  ),
+);
+// A foreign clone no longer blocks updating ours.
+const foreignPlugin = {
+  ...absent(pluginDir),
+  state: 'clone' as const,
+  origin: '/elsewhere/qaFramework',
+};
+const oursCopy = {
+  ...absent(copyDir),
+  state: 'clone' as const,
+  origin: 'https://github.com/siarhei-zavadski/qaFramework.git',
+};
+const mixed = {
+  ...github,
+  cursor: {...cursorEnv(copyDir), plugin: foreignPlugin, copy: oursCopy},
+};
+assert.equal(stops(plan(['update', '--cursor'], mixed)), 0);
+assert.deepEqual(runs(plan(['update', '--cursor'], mixed)), [
+  `git -C ${copyDir} pull --ff-only --quiet`,
+]);
+const otherServer = withCursor({
+  mcpState: 'foreign',
+  mcpServer: {command: 'node', args: ['/x/mcp.ts']},
+});
+assert.equal(stops(plan(['--cursor'], otherServer)), 1);
+assert.deepEqual(edits(plan(['uninstall', '--cursor'], otherServer)), []);
+assert.equal(stops(plan(['--cursor'], withCursor({mcpComments: true}))), 1);
+assert.equal(
+  stops(plan(['--cursor'], withCursor({mcpState: 'invalid', mcpError: 'x'}))),
+  1,
+);
+// An unreadable mcp.json doesn't block removing the links.
+assert.deepEqual(
+  edits(
+    plan(
+      ['uninstall', '--cursor'],
+      withCursor({mcpState: 'invalid', links: links(repo, 'ours')}),
+    ),
+  ),
+  [
+    `unlink ${home}/skills/generating-test-cases`,
+    `unlink ${home}/agents/change-judge.md`,
+  ],
+);
+assert.equal(
+  stops(plan(['--cursor'], withCursor({links: links(repo, 'foreign')}))),
+  1,
+);
+assert.deepEqual(kinds(plan(['uninstall', '--cursor'], fakeEnv())), ['skip']);
+// A plugin clone: unpublished work is refused, clean is removed.
+const clone = {...absent(pluginDir), state: 'clone' as const, origin: repo};
+assert.equal(
+  stops(
+    plan(
+      ['uninstall', '--cursor'],
+      withCursor({plugin: {...clone, dirty: true}}),
+    ),
+  ),
+  1,
+);
+assert.deepEqual(
+  edits(plan(['uninstall', '--cursor'], withCursor({plugin: clone}))),
+  ['remove'],
+);
+assert.deepEqual(
+  parseJsonc('{"a": "x,}//", // note\n "b": [1, 2,], /* c */}'),
+  {value: {a: 'x,}//', b: [1, 2]}, comments: true, error: undefined},
+);
+assert.deepEqual(parseJsonc('﻿{"a": 1,\n}').value, {a: 1});
+assert.deepEqual(parseJsonc('  \n').value, {});
+assert.match(String(parseJsonc('{"a": 1}}').error), /position 8/);
+await assert.rejects(
+  choose(parseArgs([]), fakeEnv()),
+  /pass --claude, --cursor/,
+);
+assert.equal(parseResult('').ok, false);
+assert.equal(parseResult('warning\nnot json').ok, false);
+assert.deepEqual(
+  parseResult('x\n{"command":"install","outcome":"ok","message":"Installed"}'),
+  {ok: true, message: 'Installed'},
+);
+assert.equal(
+  parseResult('{"command":"install","outcome":"failed","message":"m"}').ok,
+  false,
+);
+assert.throws(() => parseArgs(['--scope', 'team']), /--scope must be one of/);
+assert.throws(() => parseArgs(['--nope']), /unknown argument --nope/);
+// --source: owner/repo is always GitHub, paths need /, ./ or ~, and
+// option-like values are refused.
+assert.deepEqual(resolveSource(repo, 'checkout', 'src/x', {}), {
+  source: 'src/x',
+  cloneUrl: 'https://github.com/src/x.git',
+});
+assert.equal(
+  resolveSource(repo, 'checkout', 'github:a/b', {}).cloneUrl,
+  'https://github.com/a/b.git',
+);
+assert.equal(
+  resolveSource(repo, 'checkout', './src', {}).source,
+  `${repo}/src`,
+);
+assert.throws(
+  () => resolveSource(repo, 'checkout', './missing', {}),
+  /no such/,
+);
+assert.throws(
+  () => resolveSource(repo, 'checkout', '--upload-pack=x', {}),
+  /unsafe/,
+);
+assert.throws(
+  () => resolveSource(repo, 'checkout', 'ext::sh', {}),
+  /use a path/,
+);
+assert.match(
+  texts(plan(['--cursor'], fakeEnv())),
+  /whatever it has checked out is live/,
+);
 
 console.log(
   `all checks passed (exercise: ${generated.length} cases, ` +

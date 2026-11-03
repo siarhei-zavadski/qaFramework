@@ -1,6 +1,6 @@
 ---
-description: Google TypeScript style and extension conventions for the qaFramework CLI source
-globs: src/**/*.ts
+description: Google TypeScript style and extension conventions for the qaFramework CLI source and installer
+globs: src/**/*.ts, installer/*.mjs
 alwaysApply: false
 ---
 
@@ -16,6 +16,7 @@ Follow https://google.github.io/styleguide/tsguide.html; Prettier (`gts`, `.pret
 - Named exports only; `.ts` in relative imports; `node:` builtins.
 - Errors: `throw new Error('<field|rule>: <reason>')`; CLIs wrap `main` in `run()` (prints `error: <message>`, exit 1).
 - No new runtime dependencies; mark shortcuts with `ponytail:` naming the ceiling and upgrade path.
+- `installer/*.mjs` is plain JS (`npx` runs it from `node_modules`, where Node refuses `.ts`): JSDoc types are allowed there only, checked by `tsc` (`checkJs`).
 
 # Extending
 

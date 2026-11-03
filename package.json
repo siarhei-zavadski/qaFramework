@@ -1,6 +1,13 @@
 {
   "name": "qa-framework",
   "private": true,
+  "repository": "github:siarhei-zavadski/qaFramework",
+  "bin": {
+    "qa-framework": "installer/qa-framework.mjs"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "type": "module",
   "author": "Siarhei Zavadski",
   "license": "MIT",
@@ -9,9 +16,10 @@
     "ep": "node src/ep.ts",
     "pairwise": "node src/pairwise.ts",
     "test": "node src/check.ts",
+    "setup": "node installer/qa-framework.mjs",
     "typecheck": "tsc",
-    "format": "prettier --write src fixtures spec.example.json",
-    "format:check": "prettier --check src fixtures spec.example.json"
+    "format": "prettier --write src installer fixtures spec.example.json",
+    "format:check": "prettier --check src installer fixtures spec.example.json"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

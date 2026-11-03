@@ -20,7 +20,7 @@ Input: a local repo path; `<project>` is its folder name in kebab-case.
 
 ### 1. Inventory
 
-Glob and grep the repo (large repos: delegate to the `explore` subagent, asking for `file:line` evidence). Signals:
+Glob and grep the repo (large repos: delegate to a read-only explore subagent (`Explore` in Claude Code), asking for `file:line` evidence). Signals:
 
 | Look in | For |
 | --- | --- |

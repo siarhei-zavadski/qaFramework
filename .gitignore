@@ -12,6 +12,9 @@ projects/
 !.cursor/skills/
 !.cursor/rules/
 !.cursor/agents/
+.claude/*
+!.claude/skills
+!.claude/agents
 .playwright-mcp/
 .vscode/
 .idea/

@@ -1,0 +1,12 @@
+{
+  "name": "siarhei-zavadski",
+  "description": "Test case design with BVA, EP, pairwise/t-wise and decision-table rules, and a validation gate for agent-written changes.",
+  "owner": {"name": "Siarhei Zavadski"},
+  "plugins": [
+    {
+      "name": "qa-framework",
+      "source": "./",
+      "description": "Test case design with BVA, EP, pairwise/t-wise and decision-table rules, and a validation gate for agent-written changes."
+    }
+  ]
+}

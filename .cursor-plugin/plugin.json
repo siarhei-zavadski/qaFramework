@@ -5,6 +5,8 @@
   "author": {"name": "Siarhei Zavadski"},
   "license": "MIT",
   "keywords": ["testing", "test-design", "pairwise", "istqb"],
+  "repository": "https://github.com/siarhei-zavadski/qaFramework",
+  "homepage": "https://github.com/siarhei-zavadski/qaFramework",
   "skills": "./.cursor/skills/",
   "agents": "./.cursor/agents/"
 }
