@@ -33,6 +33,7 @@ import {matchRule, rowsForRules, uncoveredRules} from './rules.ts';
 import {isRecord, parseSpec, readJson, type Spec} from './spec.ts';
 import {
   choose,
+  doctor,
   handshake,
   parseArgs,
   parseJsonc,
@@ -1237,6 +1238,17 @@ assert.match(
   texts(plan(['uninstall', '--cursor'], otherRoot)),
   /--source \/old\/qaFramework/,
 );
+// Doctor warns once about the other install instead of failing on its links.
+const doctorLines: string[] = [];
+const log = console.log;
+console.log = (line: string) => doctorLines.push(line);
+const otherRootOk = doctor(parseArgs(['doctor', '--cursor']), {
+  ...otherRoot,
+  cursor: {...otherRoot.cursor, cli: undefined},
+});
+console.log = log;
+assert.ok(otherRootOk, doctorLines.join('\n'));
+assert.equal(doctorLines.filter(line => line.includes('--source')).length, 1);
 // Update adds links for new skills and drops links for removed ones.
 const grown = withCursor({
   mcpState: 'ours',

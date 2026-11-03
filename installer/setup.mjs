@@ -2139,18 +2139,30 @@ function configChecks(env) {
       text: problems[cursor.mcpState] ?? cursor.mcpState,
     });
   }
-  const broken = cursor.links.filter(link => link.state !== 'ours');
+  const elsewhere = cursor.links.filter(link => link.state === 'other-root');
+  const broken = cursor.links.filter(
+    link => link.state !== 'ours' && link.state !== 'other-root',
+  );
   const stale = cursor.extraLinks.filter(
     link => link.state === 'ours' || link.state === 'dangling',
   );
-  checks.push({
-    status: broken.length || stale.length ? 'fail' : 'ok',
-    harness: 'cursor',
-    text:
-      broken.length || stale.length
-        ? `links to fix (run install): ${[...broken, ...stale].map(link => link.path).join(', ')}`
-        : `${cursor.links.length} skills and agents linked to ${cursor.root}`,
-  });
+  const hints = new Set(elsewhere.map(link => otherRootHint(link.otherRoot)));
+  hints.delete(problems['other-root'] ?? '');
+  for (const text of hints)
+    checks.push({status: 'warn', harness: 'cursor', text});
+  if (broken.length || stale.length) {
+    checks.push({
+      status: 'fail',
+      harness: 'cursor',
+      text: `links to fix (run install): ${[...broken, ...stale].map(link => link.path).join(', ')}`,
+    });
+  } else if (!elsewhere.length) {
+    checks.push({
+      status: 'ok',
+      harness: 'cursor',
+      text: `${cursor.links.length} skills and agents linked to ${cursor.root}`,
+    });
+  }
   if (isRemote(env.source) && cursor.copy.state === 'clone') {
     checks.push(upToDate(cursor.copy));
   }
