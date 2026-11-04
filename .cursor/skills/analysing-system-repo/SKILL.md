@@ -44,12 +44,12 @@ Per technology, read the official docs for the detected version and add:
 ```markdown
 #### Docs: <product> <version>
 - Dimension: <setting or input that changes behaviour>: <technique hint: BVA at a threshold, set partitions, transition table, formula> (<doc URL>)
-- Failure mode: <documented failure or risk> (<doc URL>)
+- Failure mode: <documented failure or risk>; trigger: <what starts or multiplies the work>; mechanism: <state change that exhausts the resource>; amplifier: <other load, or none> (<doc URL>)
 - Question: <what the requirement or config must answer> (<doc URL or file:line>)
 - Gap: <what the CLI can't model: sequences, timing, execution>
 ```
 
-Drop any Dimension, Failure mode or Question without a source.
+Drop any Dimension, Failure mode or Question without a source. If normal traffic fires a mechanism without its trigger, the mechanism is the primary failure mode and the trigger a separate one (`generating-test-cases` step 0, failure chain).
 
 ### 3. Design tests per component
 
@@ -61,6 +61,7 @@ Start one `test-case-designer` per component with the whole component section as
 4. **A single transition** is a decision table over reachable configurations (`generating-test-cases` step 2); sequences are gaps.
 5. **Computed values** (availability, capacity, traffic share) are `=` formulas; threshold outcomes are literal rules.
 6. **Shared negative sets**: injection strings, malformed names, oversized inputs in `invalid`, one fault per case (string length limits: skill step 2).
+7. **Armed together**: a fixed timeout, TTL or lease set for many items by one event (bulk start, restart, one shared notice) is a scenario whose inputs are the count armed at once and the window their expiries fall in; the cost per expiry (a persisted or replicated write) is a component value.
 
 The engine limits are the skill's: `when` is per-field equality (a label or a list of labels for "A or B"), no comparison, `pow` or `mod`, no time or sequences.
 
